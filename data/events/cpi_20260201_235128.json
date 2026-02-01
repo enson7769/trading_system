@@ -1,0 +1,11 @@
+{
+  "event_name": "cpi",
+  "timestamp": "2026-02-01T23:51:28.187627",
+  "data": {
+    "actual": 3.2,
+    "expected": 3.3,
+    "previous": 3.4,
+    "market_reaction": "positive"
+  },
+  "recorded_at": "2026-02-01T23:51:28.187653"
+}
