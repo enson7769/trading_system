@@ -1,0 +1,10 @@
+{
+  "timestamp": "2026-02-02T12:14:30.468434",
+  "order_id": "test_order_3",
+  "symbol": "0x1234...abcd",
+  "side": "buy",
+  "quantity": "150",
+  "price": null,
+  "account_id": "main_account",
+  "gateway_name": "polymarket"
+}
