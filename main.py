@@ -12,6 +12,7 @@ from gateways.polymarket_gateway import PolymarketGateway
 from engine.execution_engine import ExecutionEngine
 from security.credential_manager import CredentialManager
 from dashboard.data_service import data_service
+from config.config import config
 from utils.logger import logger
 
 def main():
@@ -22,9 +23,22 @@ def main():
 
     cred_mgr = CredentialManager()
     acc_mgr = AccountManager()
-    acc_mgr.add_account("main_account", "polymarket", {"USDC": 10000})
+    
+    # Load account configuration from config
+    account_config = config.get_account_config('main_account')
+    acc_mgr.add_account(
+        "main_account", 
+        account_config.get('gateway', 'polymarket'), 
+        account_config.get('initial_balances', {"USDC": 10000})
+    )
 
-    poly_gw = PolymarketGateway("https://polygon-rpc.com/", cred_mgr, mock=True)
+    # Load gateway configuration from config
+    gateway_config = config.get_gateway_config('polymarket')
+    poly_gw = PolymarketGateway(
+        gateway_config.get('rpc_url', 'https://polygon-rpc.com/'), 
+        cred_mgr, 
+        mock=gateway_config.get('mock', True)
+    )
     poly_gw.no_input = args.no_input
     poly_gw.connect()
 

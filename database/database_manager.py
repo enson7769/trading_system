@@ -4,6 +4,7 @@ import os
 import json
 from typing import Dict, Any, Optional, List, Tuple
 import logging
+from config.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -18,29 +19,16 @@ class DatabaseManager:
     
     def _load_config(self) -> Dict[str, str]:
         """Load database configuration"""
-        # Default configuration
-        config = {
-            'host': 'localhost',
-            'port': '3306',
-            'user': 'root',
-            'password': '',
-            'database': 'trading_system'
+        # Load from config manager
+        db_config = config.get_database_config()
+        
+        return {
+            'host': db_config.get('host', 'localhost'),
+            'port': db_config.get('port', '3306'),
+            'user': db_config.get('user', 'root'),
+            'password': db_config.get('password', ''),
+            'database': db_config.get('database', 'trading_system')
         }
-        
-        # Override with environment variables if present
-        env_config = {
-            'host': os.environ.get('DB_HOST'),
-            'port': os.environ.get('DB_PORT'),
-            'user': os.environ.get('DB_USER'),
-            'password': os.environ.get('DB_PASSWORD'),
-            'database': os.environ.get('DB_NAME')
-        }
-        
-        for key, value in env_config.items():
-            if value:
-                config[key] = value
-        
-        return config
     
     def connect(self) -> bool:
         """Connect to the database"""

@@ -4,16 +4,28 @@ import json
 import os
 import concurrent.futures
 from utils.logger import logger
+from config.config import config
 
 class EventRecorder:
     def __init__(self, 
-                 data_dir: str = 'data/events',
-                 max_workers: int = 4,
-                 batch_size: int = 10):
+                 data_dir: str = None,
+                 max_workers: int = None,
+                 batch_size: int = None):
         """Initialize event recorder with performance optimizations"""
+        # Load configuration
+        events_config = config.get_events_config()
+        
+        # Use provided value or config value or default
+        if data_dir is None:
+            data_dir = events_config.get('data_dir', 'data/events')
+        if max_workers is None:
+            max_workers = events_config.get('max_workers', 4)
+        if batch_size is None:
+            batch_size = events_config.get('batch_size', 10)
+        
         self.data_dir = data_dir
         os.makedirs(self.data_dir, exist_ok=True)
-        self.important_events = [
+        self.important_events = events_config.get('important_events', [
             'powell_speech',
             'unemployment_rate',
             'cpi',
@@ -22,7 +34,7 @@ class EventRecorder:
             'gdp',
             'retail_sales',
             'nonfarm_payrolls'
-        ]
+        ])
         self.max_workers = max_workers
         self.batch_size = batch_size
         self._event_index: Dict[str, List[str]] = {}

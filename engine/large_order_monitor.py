@@ -4,14 +4,25 @@ from typing import Dict, List, Optional, Any, Tuple
 import json
 import os
 import concurrent.futures
+from config.config import config
 from utils.logger import logger
 
 class LargeOrderMonitor:
     def __init__(self, 
-                 threshold: Decimal = Decimal('100'), 
+                 threshold: Optional[Decimal] = None, 
                  data_dir: str = 'data/large_orders',
-                 max_memory_orders: int = 1000,
+                 max_memory_orders: Optional[int] = None,
                  max_workers: int = 4):
+        """Initialize large order monitor with configuration from config file"""
+        # Load configuration from config file
+        system_config = config.get_system_config()
+        
+        # Use provided values or config values or defaults
+        if threshold is None:
+            threshold = Decimal(str(system_config.get('large_order_threshold', 100)))
+        
+        if max_memory_orders is None:
+            max_memory_orders = system_config.get('max_large_orders_memory', 1000)
         """Initialize large order monitor with performance optimizations"""
         # Validate threshold
         if threshold <= Decimal('0'):

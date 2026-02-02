@@ -1,12 +1,22 @@
 from decimal import Decimal
 from typing import Dict, Optional, Tuple, Any
 from utils.logger import logger
+from config.config import config
 
 class ProbabilityStrategy:
     def __init__(self, 
-                 min_total_probability: Decimal = Decimal('90'),
-                 safe_total_probability: Decimal = Decimal('97')):
+                 min_total_probability: Decimal = None,
+                 safe_total_probability: Decimal = None):
         """Initialize probability strategy with configurable thresholds"""
+        # Load configuration
+        strategy_config = config.get_strategy_config('probability')
+        
+        # Use provided value or config value or default
+        if min_total_probability is None:
+            min_total_probability = Decimal(str(strategy_config.get('min_total_probability', 90)))
+        if safe_total_probability is None:
+            safe_total_probability = Decimal(str(strategy_config.get('safe_total_probability', 97)))
+        
         # Validate thresholds
         if min_total_probability < Decimal('0') or safe_total_probability > Decimal('100'):
             raise ValueError("Probability thresholds must be between 0 and 100")

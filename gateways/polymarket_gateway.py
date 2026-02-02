@@ -4,14 +4,18 @@ from core.models import Order, Instrument
 from gateways.base import BaseGateway
 from utils.logger import logger
 from security.credential_manager import CredentialManager
-
-# 合约地址（Polygon）
-EXCHANGE_ADDR = "0x435AB6645531D3f5391E8B8DA9c0F7b64e6C7e11"
-USDC_ADDR = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+from config.config import config
 
 class PolymarketGateway(BaseGateway):
-    def __init__(self, rpc_url: str, credential_manager: CredentialManager, mock: bool = False):
+    def __init__(self, rpc_url: str, credential_manager: CredentialManager, mock: bool = None):
         super().__init__("polymarket")
+        # Load configuration
+        gateway_config = config.get_gateway_config('polymarket')
+        
+        # Use provided value or config value or default
+        if mock is None:
+            mock = gateway_config.get('mock', True)
+        
         self.rpc_url = rpc_url
         self.cred_mgr = credential_manager
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
@@ -19,6 +23,9 @@ class PolymarketGateway(BaseGateway):
         self.address = None
         self.no_input = False
         self.mock = mock
+        # Load contract addresses from config
+        self.exchange_address = gateway_config.get('exchange_address', "0x435AB6645531D3f5391E8B8DA9c0F7b64e6C7e11")
+        self.usdc_address = gateway_config.get('usdc_address', "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
 
     def connect(self):
         if self.mock:

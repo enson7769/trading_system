@@ -3,11 +3,22 @@ from typing import Dict, List, Any
 import pandas as pd
 from datetime import datetime, timedelta
 from utils.logger import logger
+from config.config import config
 
 class LiquidityAnalyzer:
-    def __init__(self, max_history_per_symbol: int = 10000):
+    def __init__(self, max_history_per_symbol: int = None):
+        # Load configuration
+        liquidity_config = config.get_liquidity_config()
+        
+        # Use provided value or config value or default
+        if max_history_per_symbol is None:
+            max_history_per_symbol = liquidity_config.get('max_history_per_symbol', 10000)
+        
         self.historical_data: Dict[str, List[Dict[str, Any]]] = {}
         self.max_history_per_symbol = max_history_per_symbol
+        self.min_data_points = liquidity_config.get('min_data_points', 10)
+        self.recent_data_days = liquidity_config.get('recent_data_days', 7)
+        self.min_recent_data = liquidity_config.get('min_recent_data', 5)
         self._cache: Dict[str, Dict[str, Any]] = {}
     
     def add_historical_data(self, symbol: str, timestamp: datetime, api_price: Decimal, 
@@ -62,7 +73,7 @@ class LiquidityAnalyzer:
                 }
             
             # Check if we have enough data
-            if symbol not in self.historical_data or len(self.historical_data[symbol]) < 10:
+            if symbol not in self.historical_data or len(self.historical_data[symbol]) < self.min_data_points:
                 result = {
                     'liquidity_rating': 'LOW',
                     'slippage_estimate': Decimal('0.01'),
@@ -75,11 +86,11 @@ class LiquidityAnalyzer:
             # Convert to DataFrame for analysis
             df = pd.DataFrame(self.historical_data[symbol])
             
-            # Filter recent data (last 7 days)
-            cutoff_time = datetime.now() - timedelta(days=7)
+            # Filter recent data
+            cutoff_time = datetime.now() - timedelta(days=self.recent_data_days)
             recent_data = df[df['timestamp'] > cutoff_time]
             
-            if len(recent_data) < 5:
+            if len(recent_data) < self.min_recent_data:
                 result = {
                     'liquidity_rating': 'LOW',
                     'slippage_estimate': Decimal('0.01'),

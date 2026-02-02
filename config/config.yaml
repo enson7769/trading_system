@@ -1,0 +1,58 @@
+# 数据库配置
+database:
+  host: localhost  # 数据库主机地址
+  port: "3306"  # 数据库端口
+  user: root  # 数据库用户名
+  password: ""  # 数据库密码
+  database: trading_system  # 数据库名称
+
+# 系统配置
+system:
+  max_order_history: 10000  # 最大订单历史记录数
+  max_large_orders_memory: 1000  # 内存中最大大额订单数
+  large_order_threshold: 100  # 大额订单阈值
+  default_refresh_interval: 5  # 默认刷新间隔（秒）
+  default_page_size: 100  # 默认分页大小
+
+# 网关配置
+gateways:
+  polymarket:
+    rpc_url: https://polygon-rpc.com/  # RPC节点URL
+    mock: true  # 是否启用模拟模式
+    exchange_address: "0x435AB6645531D3f5391E8B8DA9c0F7b64e6C7e11"  # 交易所合约地址
+    usdc_address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # USDC代币合约地址
+
+# 账户配置
+accounts:
+  main_account:
+    gateway: polymarket  # 所属网关
+    initial_balances:  # 初始余额
+      USDC: 10000
+
+# 流动性配置
+liquidity:
+  max_history_per_symbol: 10000  # 每个交易对的最大历史数据量
+  min_data_points: 10  # 最小数据点数量
+  recent_data_days: 7  # 最近数据天数
+  min_recent_data: 5  # 最小最近数据量
+
+# 事件配置
+events:
+  data_dir: data/events  # 事件数据存储目录
+  max_workers: 4  # 最大工作线程数
+  batch_size: 10  # 批处理大小
+  important_events:  # 重要事件列表
+    - powell_speech  # 鲍威尔讲话
+    - unemployment_rate  # 失业率
+    - cpi  # 消费者价格指数
+    - ppi  # 生产者价格指数
+    - fomc_meeting  # 美联储会议
+    - gdp  # 国内生产总值
+    - retail_sales  # 零售销售
+    - nonfarm_payrolls  # 非农就业数据
+
+# 策略配置
+strategy:
+  probability:
+    min_total_probability: 90  # 最小总概率阈值
+    safe_total_probability: 97  # 安全总概率阈值
