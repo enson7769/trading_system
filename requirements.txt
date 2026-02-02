@@ -1,3 +1,4 @@
+pandas
 web3>=6.20.0
 eth-account>=0.10.0
 eth-utils>=2.1.0
