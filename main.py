@@ -131,7 +131,7 @@ def main():
     logger.info("5. Liquidity analysis: Should provide analysis results")
     logger.info("6. Large orders summary: Should show summary data")
     
-    logger.info("\n🏁 Demo completed. Check the dashboard for monitoring.")
+    logger.info("\nDemo completed. Check the dashboard for monitoring.")
     
     # Print test completion message to console
     print("\nTest completed successfully! Check logs for details.")
@@ -168,14 +168,14 @@ def start_dashboard():
         for line in iter(process.stdout.readline, ''):
             if "You can now view your Streamlit app in your browser" in line:
                 logger.info("Dashboard started successfully!")
-                print("\n📊 Dashboard started successfully!")
+                print("\nDashboard started successfully!")
                 print("   Local URL: http://localhost:8501")
             elif "Error" in line or "Exception" in line:
                 logger.error(f"Dashboard error: {line.strip()}")
             
     except Exception as e:
         logger.error(f"Failed to start dashboard: {e}")
-        print(f"\n❌ Failed to start dashboard: {e}")
+        print(f"\nFailed to start dashboard: {e}")
 
 if __name__ == "__main__":
     main()
