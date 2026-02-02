@@ -9,6 +9,7 @@ from decimal import Decimal
 from core.models import Instrument
 from account.account_manager import AccountManager
 from gateways.polymarket_gateway import PolymarketGateway
+from gateways.binance_gateway import BinanceGateway
 from engine.execution_engine import ExecutionEngine
 from security.credential_manager import CredentialManager
 from dashboard.data_service import data_service
@@ -24,15 +25,25 @@ def main():
     cred_mgr = CredentialManager()
     acc_mgr = AccountManager()
     
-    # Load account configuration from config
+    # Load account configurations from config
+    # Main account (Polymarket)
     account_config = config.get_account_config('main_account')
     acc_mgr.add_account(
         "main_account", 
         account_config.get('gateway', 'polymarket'), 
         account_config.get('initial_balances', {"USDC": 10000})
     )
+    
+    # Binance account
+    binance_account_config = config.get_account_config('binance_account')
+    acc_mgr.add_account(
+        "binance_account", 
+        binance_account_config.get('gateway', 'binance'), 
+        binance_account_config.get('initial_balances', {"USDC": 10000, "BTC": 1.0, "ETH": 10.0})
+    )
 
-    # Load gateway configuration from config
+    # Load gateway configurations from config
+    # Polymarket gateway
     gateway_config = config.get_gateway_config('polymarket')
     poly_gw = PolymarketGateway(
         gateway_config.get('rpc_url', 'https://polygon-rpc.com/'), 
@@ -41,8 +52,17 @@ def main():
     )
     poly_gw.no_input = args.no_input
     poly_gw.connect()
+    
+    # Binance gateway
+    binance_config = config.get_gateway_config('binance')
+    binance_gw = BinanceGateway(
+        cred_mgr, 
+        mock=binance_config.get('mock', True)
+    )
+    binance_gw.no_input = args.no_input
+    binance_gw.connect()
 
-    engine = ExecutionEngine(acc_mgr, {"polymarket": poly_gw})
+    engine = ExecutionEngine(acc_mgr, {"polymarket": poly_gw, "binance": binance_gw})
     
     # Initialize data service for dashboard
     data_service.initialize(engine)
@@ -137,6 +157,37 @@ def main():
     large_orders_summary = engine.get_large_orders_summary()
     logger.info(f"Large orders summary: {large_orders_summary}")
     
+    # Test 7: Binance gateway functionality
+    logger.info("\n=== Test 7: Binance gateway functionality ===")
+    try:
+        # Test Binance account balance
+        binance_balance = binance_gw.get_account_balance()
+        logger.info(f"Binance account balance: {binance_balance}")
+        
+        # Test specific coin balance
+        usdc_balance = binance_gw.get_account_balance('USDC')
+        logger.info(f"Binance USDC balance: {usdc_balance}")
+        
+        # Test deposit history
+        deposit_history = binance_gw.deposit_history('USDC')
+        logger.info(f"Binance deposit history (USDC): {deposit_history}")
+        
+        # Test withdraw history
+        withdraw_history = binance_gw.withdraw_history('USDC')
+        logger.info(f"Binance withdraw history (USDC): {withdraw_history}")
+        
+        # Test withdrawal (simulated)
+        withdraw_result = binance_gw.withdraw(
+            coin='USDC',
+            amount=100.0,
+            address='0xWithdrawAddress12345678901234567890123456789012',
+            network='BSC'
+        )
+        logger.info(f"Binance withdrawal result: {withdraw_result}")
+        
+    except Exception as e:
+        logger.error(f"Error testing Binance gateway: {e}")
+    
     logger.info("\n=== Test Results ===")
     logger.info("1. High probability trading: Should be accepted")
     logger.info("2. Medium probability trading: Should be rejected (below 90%)")
@@ -144,6 +195,7 @@ def main():
     logger.info("4. Event data recording: Should record CPI data")
     logger.info("5. Liquidity analysis: Should provide analysis results")
     logger.info("6. Large orders summary: Should show summary data")
+    logger.info("7. Binance gateway: Should show balance and transaction history")
     
     logger.info("\nDemo completed. Check the dashboard for monitoring.")
     

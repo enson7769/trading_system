@@ -13,7 +13,7 @@ from utils.logger import logger
 
 class ExecutionEngine:
     def __init__(self, account_manager: AccountManager, gateways: Dict[str, BaseGateway]):
-        """Initialize execution engine with all required components"""
+        """初始化执行引擎，包含所有必要组件"""
         self.account_manager = account_manager
         self.gateways = gateways
         self.risk_manager = RiskManager()
@@ -24,7 +24,7 @@ class ExecutionEngine:
         self._order_history: List[Dict[str, Any]] = []
     
     def submit_order(self, order: Order, market_probabilities: Optional[Dict[str, Decimal]] = None) -> Dict[str, Any]:
-        """Submit a single order with comprehensive validation and execution"""
+        """提交单个订单，包含全面的验证和执行流程"""
         result = {
             'order_id': order.order_id,
             'status': 'pending',
@@ -33,19 +33,19 @@ class ExecutionEngine:
         }
         
         try:
-            # Step 1: Validate order
+            # 步骤1: 验证订单
             validation_result = self._validate_order(order)
             if not validation_result['valid']:
                 order.status = 'rejected'
                 result['status'] = 'rejected'
                 result['message'] = validation_result['message']
                 result['steps'].append({'step': 'validation', 'status': 'failed', 'message': validation_result['message']})
-                logger.warning(f"Order {order.order_id} rejected: {validation_result['message']}")
+                logger.warning(f"订单 {order.order_id} 被拒绝: {validation_result['message']}")
                 return result
             
             result['steps'].append({'step': 'validation', 'status': 'success'})
             
-            # Step 2: Check probability strategy if market data provided
+            # 步骤2: 如果提供了市场数据，检查概率策略
             if market_probabilities:
                 prob_analysis = self.probability_strategy.analyze_market_probabilities(market_probabilities)
                 if not prob_analysis['can_trade']:
@@ -53,27 +53,27 @@ class ExecutionEngine:
                     result['status'] = 'rejected'
                     result['message'] = prob_analysis['message']
                     result['steps'].append({'step': 'probability_check', 'status': 'failed', 'message': prob_analysis['message']})
-                    logger.warning(f"Order {order.order_id} rejected: {prob_analysis['message']}")
+                    logger.warning(f"订单 {order.order_id} 被拒绝: {prob_analysis['message']}")
                     return result
                 elif prob_analysis['message']:
                     result['steps'].append({'step': 'probability_check', 'status': 'warning', 'message': prob_analysis['message']})
-                    logger.warning(f"Order {order.order_id} proceeding with caution: {prob_analysis['message']}")
+                    logger.warning(f"订单 {order.order_id} 谨慎执行: {prob_analysis['message']}")
                 else:
                     result['steps'].append({'step': 'probability_check', 'status': 'success'})
             
-            # Step 3: Check risk
+            # 步骤3: 检查风险
             account = self.account_manager.get_account(order.account_id)
             if not self.risk_manager.check_order(account, order):
                 order.status = 'rejected'
                 result['status'] = 'rejected'
-                result['message'] = 'Risk check failed'
-                result['steps'].append({'step': 'risk_check', 'status': 'failed', 'message': 'Insufficient funds or risk limit exceeded'})
-                logger.warning(f"Order {order.order_id} rejected by risk manager")
+                result['message'] = '风险检查失败'
+                result['steps'].append({'step': 'risk_check', 'status': 'failed', 'message': '资金不足或超出风险限制'})
+                logger.warning(f"订单 {order.order_id} 被风险管理器拒绝")
                 return result
             
             result['steps'].append({'step': 'risk_check', 'status': 'success'})
             
-            # Step 4: Analyze liquidity
+            # 步骤4: 分析流动性
             liquidity_analysis = self.liquidity_analyzer.analyze_liquidity(
                 order.instrument.symbol, 
                 order.quantity
@@ -81,11 +81,11 @@ class ExecutionEngine:
             
             if liquidity_analysis['liquidity_rating'] == 'LOW':
                 result['steps'].append({'step': 'liquidity_analysis', 'status': 'warning', 'message': liquidity_analysis['message']})
-                logger.warning(f"Low liquidity for {order.instrument.symbol}: {liquidity_analysis['message']}")
+                logger.warning(f"{order.instrument.symbol} 流动性较低: {liquidity_analysis['message']}")
             else:
                 result['steps'].append({'step': 'liquidity_analysis', 'status': 'success', 'message': liquidity_analysis['message']})
             
-            # Step 5: Record large order if applicable
+            # 步骤5: 记录大额订单（如果适用）
             large_order_info = {
                 'order_id': order.order_id,
                 'symbol': order.instrument.symbol,
@@ -98,14 +98,14 @@ class ExecutionEngine:
             large_order_recorded = self.large_order_monitor.record_large_order(large_order_info)
             result['steps'].append({'step': 'large_order_check', 'status': 'success', 'recorded': large_order_recorded})
             
-            # Step 6: Execute order
+            # 步骤6: 执行订单
             gateway_name = order.instrument.gateway_name
             if gateway_name not in self.gateways:
                 order.status = 'rejected'
                 result['status'] = 'rejected'
-                result['message'] = f'Gateway {gateway_name} not available'
-                result['steps'].append({'step': 'execution', 'status': 'failed', 'message': f'Gateway {gateway_name} not available'})
-                logger.error(f"Gateway {gateway_name} not found for order {order.order_id}")
+                result['message'] = f'网关 {gateway_name} 不可用'
+                result['steps'].append({'step': 'execution', 'status': 'failed', 'message': f'网关 {gateway_name} 不可用'})
+                logger.error(f"订单 {order.order_id} 的网关 {gateway_name} 未找到")
                 return result
             
             gateway = self.gateways[gateway_name]
@@ -114,35 +114,35 @@ class ExecutionEngine:
             order.status = 'submitted'
             
             result['status'] = 'submitted'
-            result['message'] = f'Order submitted successfully'
+            result['message'] = f'订单提交成功'
             result['gateway_order_id'] = gw_order_id
             result['steps'].append({'step': 'execution', 'status': 'success', 'gateway_order_id': gw_order_id})
-            logger.info(f"Order {order.order_id} submitted → {gw_order_id[:10]}...")
+            logger.info(f"订单 {order.order_id} 已提交 → {gw_order_id[:10]}...")
             
-            # Step 7: Record execution for liquidity analysis
-            # In a real system, we would get the actual executed price from the gateway
+            # 步骤7: 记录执行为流动性分析
+            # 在实际系统中，我们会从网关获取实际执行价格
             self.liquidity_analyzer.add_historical_data(
                 order.instrument.symbol,
                 datetime.now(),
                 order.price or Decimal('1'),
-                order.price or Decimal('1'),  # Simulating no slippage for demo
+                order.price or Decimal('1'),  # 模拟无滑点
                 order.quantity
             )
             
-            # Step 8: Record order history
+            # 步骤8: 记录订单历史
             self._record_order_history(order, result)
             
         except Exception as e:
             order.status = 'rejected'
             result['status'] = 'error'
-            result['message'] = f'Unexpected error: {str(e)}'
+            result['message'] = f'意外错误: {str(e)}'
             result['steps'].append({'step': 'execution', 'status': 'error', 'message': str(e)})
-            logger.error(f"Error submitting order {order.order_id}: {e}")
+            logger.error(f"提交订单 {order.order_id} 错误: {e}")
         
         return result
     
     def submit_orders_batch(self, orders: List[Tuple[Order, Optional[Dict[str, Decimal]]]]) -> Dict[str, Any]:
-        """Submit multiple orders in batch for improved performance"""
+        """批量提交多个订单以提高性能"""
         results = {
             'total': len(orders),
             'submitted': 0,
@@ -169,37 +169,37 @@ class ExecutionEngine:
                     'status': 'error',
                     'message': str(e)
                 })
-                logger.error(f"Error processing batch order {order.order_id}: {e}")
+                logger.error(f"处理批量订单 {order.order_id} 错误: {e}")
         
         return results
     
     def _validate_order(self, order: Order) -> Dict[str, Any]:
-        """Validate order before submission"""
+        """提交前验证订单"""
         if not order:
-            return {'valid': False, 'message': 'Order cannot be None'}
+            return {'valid': False, 'message': '订单不能为空'}
         
         if not order.order_id:
-            return {'valid': False, 'message': 'Order ID is required'}
+            return {'valid': False, 'message': '订单ID是必需的'}
         
         if not order.instrument:
-            return {'valid': False, 'message': 'Instrument is required'}
+            return {'valid': False, 'message': '交易品种是必需的'}
         
         if not order.side:
-            return {'valid': False, 'message': 'Order side is required'}
+            return {'valid': False, 'message': '订单方向是必需的'}
         
         if not order.type:
-            return {'valid': False, 'message': 'Order type is required'}
+            return {'valid': False, 'message': '订单类型是必需的'}
         
         if order.quantity <= Decimal('0'):
-            return {'valid': False, 'message': 'Order quantity must be positive'}
+            return {'valid': False, 'message': '订单数量必须为正数'}
         
         if order.instrument.gateway_name not in self.gateways:
-            return {'valid': False, 'message': f'Gateway {order.instrument.gateway_name} not available'}
+            return {'valid': False, 'message': f'网关 {order.instrument.gateway_name} 不可用'}
         
-        return {'valid': True, 'message': 'Order validation successful'}
+        return {'valid': True, 'message': '订单验证成功'}
     
     def _record_order_history(self, order: Order, result: Dict[str, Any]):
-        """Record order history for audit and analysis"""
+        """记录订单历史用于审计和分析"""
         try:
             history_entry = {
                 'timestamp': datetime.now().isoformat(),
@@ -215,15 +215,15 @@ class ExecutionEngine:
                 'execution_result': result
             }
             
-            # Manage history size
-            if len(self._order_history) >= 10000:  # Limit to 10,000 orders
+            # 管理历史记录大小
+            if len(self._order_history) >= 10000:  # 限制为10,000个订单
                 self._order_history.pop(0)
             
             self._order_history.append(history_entry)
             
-            # Save to database
+            # 保存到数据库
             try:
-                # Lazy import to avoid circular import
+                # 延迟导入以避免循环导入
                 from dashboard.data_service import data_service
                 
                 order_data = {
@@ -235,28 +235,28 @@ class ExecutionEngine:
                     'quantity': order.quantity,
                     'price': order.price,
                     'status': order.status,
-                    'filled_qty': 0,  # Default to 0, update when order is filled
+                    'filled_qty': 0,  # 默认值为0，订单成交时更新
                     'gateway_order_id': order.gateway_order_id
                 }
                 data_service.save_order(order_data)
-                logger.info(f"Order {order.order_id} saved to database")
+                logger.info(f"订单 {order.order_id} 已保存到数据库")
             except Exception as db_error:
-                logger.error(f"Error saving order to database: {db_error}")
+                logger.error(f"保存订单到数据库错误: {db_error}")
         except Exception as e:
-            logger.error(f"Error recording order history: {e}")
+            logger.error(f"记录订单历史错误: {e}")
     
     def record_event_data(self, event_name: str, data: Dict[str, Any]):
-        """Record event data with enhanced error handling"""
+        """记录事件数据，增强错误处理"""
         try:
             success = self.event_recorder.record_event_data(event_name, datetime.now(), data)
             if success:
-                logger.info(f"Event data recorded for {event_name}")
+                logger.info(f"事件数据已记录: {event_name}")
             else:
-                logger.warning(f"Failed to record event data for {event_name}")
+                logger.warning(f"事件数据记录失败: {event_name}")
             
-            # Save to database
+            # 保存到数据库
             try:
-                # Lazy import to avoid circular import
+                # 延迟导入以避免循环导入
                 from dashboard.data_service import data_service
                 
                 event_data = {
@@ -265,42 +265,42 @@ class ExecutionEngine:
                     'data': data
                 }
                 data_service.save_event(event_data)
-                logger.info(f"Event {event_name} saved to database")
+                logger.info(f"事件 {event_name} 已保存到数据库")
             except Exception as db_error:
-                logger.error(f"Error saving event to database: {db_error}")
+                logger.error(f"保存事件到数据库错误: {db_error}")
         except Exception as e:
-            logger.error(f"Error recording event data: {e}")
+            logger.error(f"记录事件数据错误: {e}")
     
     def record_events_batch(self, events: List[Tuple[str, Dict[str, Any]]]):
-        """Record multiple events in batch"""
+        """批量记录多个事件"""
         try:
             event_tuples = [(event_name, datetime.now(), data) for event_name, data in events]
             result = self.event_recorder.record_events_batch(event_tuples)
-            logger.info(f"Batch event recording completed: {result}")
+            logger.info(f"批量事件记录完成: {result}")
             return result
         except Exception as e:
-            logger.error(f"Error in batch event recording: {e}")
+            logger.error(f"批量事件记录错误: {e}")
             return {'total': len(events), 'success': 0, 'failed': len(events), 'errors': [str(e)]}
     
     def get_liquidity_analysis(self, symbol: str, size: Decimal) -> Dict[str, Any]:
-        """Get liquidity analysis with error handling"""
+        """获取流动性分析，包含错误处理"""
         try:
             return self.liquidity_analyzer.analyze_liquidity(symbol, size)
         except Exception as e:
-            logger.error(f"Error getting liquidity analysis: {e}")
+            logger.error(f"获取流动性分析错误: {e}")
             return {
                 'liquidity_rating': 'LOW',
                 'slippage_estimate': Decimal('0.01'),
                 'confidence': 'LOW',
-                'message': f'Error during analysis: {str(e)}'
+                'message': f'分析过程错误: {str(e)}'
             }
     
     def get_large_orders_summary(self, days: int = 7) -> Dict[str, Any]:
-        """Get large orders summary with error handling"""
+        """获取大额订单摘要，包含错误处理"""
         try:
             return self.large_order_monitor.get_large_orders_summary(days)
         except Exception as e:
-            logger.error(f"Error getting large orders summary: {e}")
+            logger.error(f"获取大额订单摘要错误: {e}")
             return {
                 'total_large_orders': 0,
                 'by_symbol': {},
@@ -312,11 +312,11 @@ class ExecutionEngine:
             }
     
     def get_order_history(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get recent order history"""
+        """获取最近的订单历史"""
         return self._order_history[-limit:]
     
     def get_engine_status(self) -> Dict[str, Any]:
-        """Get comprehensive engine status"""
+        """获取全面的引擎状态"""
         try:
             status = {
                 'timestamp': datetime.now().isoformat(),
@@ -332,7 +332,7 @@ class ExecutionEngine:
                 'system_health': 'healthy'
             }
             
-            # Add component-specific status
+            # 添加组件特定状态
             status['components']['large_order_monitor'] = {
                 'status': 'active',
                 'threshold': str(self.large_order_monitor.threshold)
@@ -340,7 +340,7 @@ class ExecutionEngine:
             
             return status
         except Exception as e:
-            logger.error(f"Error getting engine status: {e}")
+            logger.error(f"获取引擎状态错误: {e}")
             return {
                 'timestamp': datetime.now().isoformat(),
                 'system_health': 'error',

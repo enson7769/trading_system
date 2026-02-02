@@ -9,17 +9,17 @@ from config.config import config
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    """Database manager for MySQL operations"""
+    """MySQL数据库操作管理器"""
     
     def __init__(self):
-        """Initialize database manager"""
+        """初始化数据库管理器"""
         self.config = self._load_config()
         self.connection = None
         self.cursor = None
     
     def _load_config(self) -> Dict[str, str]:
-        """Load database configuration"""
-        # Load from config manager
+        """加载数据库配置"""
+        # 从配置管理器加载
         db_config = config.get_database_config()
         
         return {
@@ -31,7 +31,7 @@ class DatabaseManager:
         }
     
     def connect(self) -> bool:
-        """Connect to the database"""
+        """连接到数据库"""
         try:
             self.connection = mysql.connector.connect(
                 host=self.config['host'],
@@ -43,43 +43,43 @@ class DatabaseManager:
             
             if self.connection.is_connected():
                 self.cursor = self.connection.cursor(dictionary=True)
-                logger.info(f"Connected to MySQL database: {self.config['database']}")
+                logger.info(f"已连接到MySQL数据库: {self.config['database']}")
                 return True
         except Error as e:
-            logger.error(f"Error connecting to MySQL database: {e}")
+            logger.error(f"连接MySQL数据库错误: {e}")
         
         return False
     
     def disconnect(self):
-        """Disconnect from the database"""
+        """断开数据库连接"""
         try:
             if self.cursor:
                 self.cursor.close()
             if self.connection and self.connection.is_connected():
                 self.connection.close()
-                logger.info("Disconnected from MySQL database")
+                logger.info("已断开MySQL数据库连接")
         except Error as e:
-            logger.error(f"Error disconnecting from MySQL database: {e}")
+            logger.error(f"断开MySQL数据库连接错误: {e}")
     
     def initialize_database(self) -> bool:
-        """Initialize database schema"""
+        """初始化数据库架构"""
         try:
-            # Check if connection is established
+            # 检查连接是否建立
             if not self.connection or not self.connection.is_connected():
                 if not self.connect():
                     return False
             
-            # Read schema file
+            # 读取架构文件
             schema_path = os.path.join(os.path.dirname(__file__), 'db_schema.sql')
             if not os.path.exists(schema_path):
-                logger.error(f"Schema file not found: {schema_path}")
+                logger.error(f"架构文件未找到: {schema_path}")
                 return False
             
             with open(schema_path, 'r', encoding='utf-8') as f:
                 schema_sql = f.read()
             
-            # Execute schema SQL
-            # Split by semicolon to handle multiple statements
+            # 执行架构SQL
+            # 按分号分割以处理多个语句
             statements = schema_sql.split(';')
             for statement in statements:
                 statement = statement.strip()
@@ -87,22 +87,22 @@ class DatabaseManager:
                     try:
                         self.cursor.execute(statement)
                     except Error as e:
-                        # Ignore duplicate table errors
+                        # 忽略表已存在的错误
                         if "already exists" not in str(e):
-                            logger.error(f"Error executing SQL statement: {e}")
-                            logger.error(f"Statement: {statement}")
+                            logger.error(f"执行SQL语句错误: {e}")
+                            logger.error(f"语句: {statement}")
             
             self.connection.commit()
-            logger.info("Database schema initialized successfully")
+            logger.info("数据库架构初始化成功")
             return True
         except Error as e:
-            logger.error(f"Error initializing database: {e}")
+            logger.error(f"初始化数据库错误: {e}")
             if self.connection:
                 self.connection.rollback()
             return False
     
     def execute_query(self, query: str, params: Optional[Tuple] = None) -> Optional[List[Dict[str, Any]]]:
-        """Execute a SELECT query"""
+        """执行SELECT查询"""
         try:
             if not self.connection or not self.connection.is_connected():
                 if not self.connect():
@@ -112,13 +112,13 @@ class DatabaseManager:
             result = self.cursor.fetchall()
             return result
         except Error as e:
-            logger.error(f"Error executing query: {e}")
-            logger.error(f"Query: {query}")
-            logger.error(f"Params: {params}")
+            logger.error(f"执行查询错误: {e}")
+            logger.error(f"查询: {query}")
+            logger.error(f"参数: {params}")
             return None
     
     def execute_update(self, query: str, params: Optional[Tuple] = None) -> int:
-        """Execute an INSERT, UPDATE, or DELETE query"""
+        """执行INSERT、UPDATE或DELETE查询"""
         try:
             if not self.connection or not self.connection.is_connected():
                 if not self.connect():
@@ -129,25 +129,25 @@ class DatabaseManager:
             self.connection.commit()
             return affected_rows
         except Error as e:
-            logger.error(f"Error executing update: {e}")
-            logger.error(f"Query: {query}")
-            logger.error(f"Params: {params}")
+            logger.error(f"执行更新错误: {e}")
+            logger.error(f"查询: {query}")
+            logger.error(f"参数: {params}")
             if self.connection:
                 self.connection.rollback()
             return 0
     
     def call_procedure(self, procedure_name: str, params: Optional[Tuple] = None) -> Optional[List[Dict[str, Any]]]:
-        """Call a stored procedure"""
+        """调用存储过程"""
         try:
             if not self.connection or not self.connection.is_connected():
                 if not self.connect():
                     return None
             
-            # For stored procedures, we need to use a different cursor
+            # 对于存储过程，需要使用不同的游标
             proc_cursor = self.connection.cursor(dictionary=True)
             proc_cursor.callproc(procedure_name, params or ())
             
-            # Get results from the procedure
+            # 获取过程的结果
             result = []
             for result_set in proc_cursor.stored_results():
                 result.extend(result_set.fetchall())
@@ -155,13 +155,13 @@ class DatabaseManager:
             proc_cursor.close()
             return result
         except Error as e:
-            logger.error(f"Error calling stored procedure: {e}")
-            logger.error(f"Procedure: {procedure_name}")
-            logger.error(f"Params: {params}")
+            logger.error(f"调用存储过程错误: {e}")
+            logger.error(f"过程: {procedure_name}")
+            logger.error(f"参数: {params}")
             return None
     
     def get_last_insert_id(self) -> int:
-        """Get the last inserted ID"""
+        """获取最后插入的ID"""
         try:
             if not self.connection or not self.connection.is_connected():
                 if not self.connect():
@@ -171,15 +171,15 @@ class DatabaseManager:
             result = self.cursor.fetchone()
             return result['id'] if result else 0
         except Error as e:
-            logger.error(f"Error getting last insert ID: {e}")
+            logger.error(f"获取最后插入ID错误: {e}")
             return 0
     
     def is_connected(self) -> bool:
-        """Check if the database connection is active"""
+        """检查数据库连接是否活跃"""
         try:
             return self.connection and self.connection.is_connected()
         except:
             return False
 
-# Create a singleton instance
+# 创建单例实例
 db_manager = DatabaseManager()

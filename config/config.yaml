@@ -21,6 +21,10 @@ gateways:
     mock: true  # 是否启用模拟模式
     exchange_address: "0x435AB6645531D3f5391E8B8DA9c0F7b64e6C7e11"  # 交易所合约地址
     usdc_address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # USDC代币合约地址
+  binance:
+    mock: true  # 是否启用模拟模式
+    testnet: false  # 是否使用测试网络
+    base_url: https://api.binance.com  # API基础URL
 
 # 账户配置
 accounts:
@@ -28,6 +32,12 @@ accounts:
     gateway: polymarket  # 所属网关
     initial_balances:  # 初始余额
       USDC: 10000
+  binance_account:
+    gateway: binance  # 所属网关
+    initial_balances:  # 初始余额
+      USDC: 10000
+      BTC: 1.0
+      ETH: 10.0
 
 # 流动性配置
 liquidity:
