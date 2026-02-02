@@ -235,7 +235,7 @@ def start_dashboard():
             if "You can now view your Streamlit app in your browser" in line:
                 logger.info("Dashboard started successfully!")
                 print("\nDashboard started successfully!")
-                print("   Local URL: http://localhost:8501")
+                print("Local URL: http://localhost:8501")
             elif "Error" in line or "Exception" in line:
                 logger.error(f"Dashboard error: {line.strip()}")
             
