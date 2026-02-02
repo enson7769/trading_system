@@ -117,6 +117,25 @@ class LargeOrderMonitor:
                     self._order_index[symbol] = []
                 self._order_index[symbol].append(filename)
             
+            # Save to database
+            try:
+                # Lazy import to avoid circular import
+                from dashboard.data_service import data_service
+                
+                db_order_data = {
+                    'order_id': order.get('order_id'),
+                    'account_id': order.get('account_id'),
+                    'symbol': order.get('symbol'),
+                    'side': order.get('side'),
+                    'quantity': order.get('quantity'),
+                    'price': order.get('price'),
+                    'gateway_name': order.get('gateway_name')
+                }
+                data_service.save_large_order(db_order_data)
+                logger.info(f"Large order {order.get('order_id')} saved to database")
+            except Exception as db_error:
+                logger.error(f"Error saving large order to database: {db_error}")
+            
             logger.info(f"Recorded large order: {order.get('order_id')} for {order.get('quantity')} units")
             return True
             

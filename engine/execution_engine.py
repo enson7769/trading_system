@@ -220,6 +220,28 @@ class ExecutionEngine:
                 self._order_history.pop(0)
             
             self._order_history.append(history_entry)
+            
+            # Save to database
+            try:
+                # Lazy import to avoid circular import
+                from dashboard.data_service import data_service
+                
+                order_data = {
+                    'order_id': order.order_id,
+                    'account_id': order.account_id,
+                    'instrument': order.instrument.symbol,
+                    'side': order.side.value,
+                    'type': order.type.value,
+                    'quantity': order.quantity,
+                    'price': order.price,
+                    'status': order.status,
+                    'filled_qty': 0,  # Default to 0, update when order is filled
+                    'gateway_order_id': order.gateway_order_id
+                }
+                data_service.save_order(order_data)
+                logger.info(f"Order {order.order_id} saved to database")
+            except Exception as db_error:
+                logger.error(f"Error saving order to database: {db_error}")
         except Exception as e:
             logger.error(f"Error recording order history: {e}")
     
@@ -231,6 +253,21 @@ class ExecutionEngine:
                 logger.info(f"Event data recorded for {event_name}")
             else:
                 logger.warning(f"Failed to record event data for {event_name}")
+            
+            # Save to database
+            try:
+                # Lazy import to avoid circular import
+                from dashboard.data_service import data_service
+                
+                event_data = {
+                    'event_name': event_name,
+                    'timestamp': datetime.now(),
+                    'data': data
+                }
+                data_service.save_event(event_data)
+                logger.info(f"Event {event_name} saved to database")
+            except Exception as db_error:
+                logger.error(f"Error saving event to database: {db_error}")
         except Exception as e:
             logger.error(f"Error recording event data: {e}")
     

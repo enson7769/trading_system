@@ -1,5 +1,7 @@
 import sys
 import os
+import threading
+import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import argparse
@@ -9,11 +11,13 @@ from account.account_manager import AccountManager
 from gateways.polymarket_gateway import PolymarketGateway
 from engine.execution_engine import ExecutionEngine
 from security.credential_manager import CredentialManager
+from dashboard.data_service import data_service
 from utils.logger import logger
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-input", action="store_true", help="Use only environment variables")
+    parser.add_argument("--no-dashboard", action="store_true", help="Skip starting the monitoring dashboard")
     args = parser.parse_args()
 
     cred_mgr = CredentialManager()
@@ -25,6 +29,18 @@ def main():
     poly_gw.connect()
 
     engine = ExecutionEngine(acc_mgr, {"polymarket": poly_gw})
+    
+    # Initialize data service for dashboard
+    data_service.initialize(engine)
+    logger.info("Data service initialized for dashboard")
+    
+    # Start dashboard in a separate thread if not disabled
+    if not args.no_dashboard:
+        logger.info("Starting monitoring dashboard...")
+        dashboard_thread = threading.Thread(target=start_dashboard, daemon=True)
+        dashboard_thread.start()
+        # Give dashboard time to start
+        time.sleep(2)
 
     inst = Instrument(
         symbol="0x1234...abcd",
@@ -119,6 +135,47 @@ def main():
     
     # Print test completion message to console
     print("\nTest completed successfully! Check logs for details.")
+    print("\nMonitoring dashboard is starting...")
+    print("Dashboard will be available at: http://localhost:8501")
+
+# Function to start Streamlit dashboard
+def start_dashboard():
+    """Start Streamlit dashboard in a separate thread"""
+    import subprocess
+    import sys
+    
+    try:
+        # Start Streamlit dashboard
+        streamlit_cmd = [
+            sys.executable,
+            "-m", "streamlit",
+            "run", "dashboard/monitoring.py",
+            "--server.headless", "true",
+            "--server.port", "8501"
+        ]
+        
+        logger.info(f"Starting dashboard with command: {' '.join(streamlit_cmd)}")
+        
+        # Run Streamlit in the background
+        process = subprocess.Popen(
+            streamlit_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        
+        # Monitor the process output
+        for line in iter(process.stdout.readline, ''):
+            if "You can now view your Streamlit app in your browser" in line:
+                logger.info("Dashboard started successfully!")
+                print("\n📊 Dashboard started successfully!")
+                print("   Local URL: http://localhost:8501")
+            elif "Error" in line or "Exception" in line:
+                logger.error(f"Dashboard error: {line.strip()}")
+            
+    except Exception as e:
+        logger.error(f"Failed to start dashboard: {e}")
+        print(f"\n❌ Failed to start dashboard: {e}")
 
 if __name__ == "__main__":
     main()
