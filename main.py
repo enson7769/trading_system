@@ -5,8 +5,6 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import argparse
-from decimal import Decimal
-from core.models import Instrument
 from account.account_manager import AccountManager
 from gateways.polymarket_gateway import PolymarketGateway
 from engine.execution_engine import ExecutionEngine
