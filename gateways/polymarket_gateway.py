@@ -45,6 +45,10 @@ class PolymarketGateway(BaseGateway):
         self.data_api_url = gateway_config.get('data_api_url', "https://data-api.polymarket.com")
         self.websocket_url = gateway_config.get('websocket_url', "wss://ws-subscriptions-clob.polymarket.com")
         
+        # 从配置加载账户信息
+        self.address = gateway_config.get('address', None)
+        self.api_key = gateway_config.get('api_key', None)
+        
         # 从配置加载API配置
         self.api_timeout = gateway_config.get('api_timeout', 30)
         self.api_retries = gateway_config.get('api_retries', 3)
@@ -54,13 +58,23 @@ class PolymarketGateway(BaseGateway):
         if self.mock:
             # 模拟模式：跳过实际连接，使用测试数据
             self.private_key = "0x" + "a" * 64  # 模拟私钥
-            self.address = "0xMockAddress12345678901234567890123456789012"
-            logger.info(f"[MOCK] 已连接Polymarket钱包: {self.address[:6]}...{self.address[-4:]}")
+            # 使用配置文件中的地址或默认模拟地址
+            if self.address:
+                logger.info(f"[MOCK] 已连接Polymarket钱包: {self.address[:6]}...{self.address[-4:]}")
+            else:
+                self.address = "0xMockAddress12345678901234567890123456789012"
+                logger.info(f"[MOCK] 已连接Polymarket钱包: {self.address[:6]}...{self.address[-4:]}")
             return
 
         if not self.w3.is_connected():
             raise ConnectionError("连接RPC失败")
 
+        # 如果配置文件中有地址，直接使用
+        if self.address:
+            logger.info(f"已连接Polymarket钱包: {self.address[:6]}...{self.address[-4:]}")
+            return
+
+        # 否则，从私钥生成地址
         self.private_key = self.cred_mgr.get_secret(
             key="polymarket_private_key",
             prompt="输入Polymarket钱包私钥 (隐藏): ",

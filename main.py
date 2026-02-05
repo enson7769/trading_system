@@ -18,15 +18,15 @@ from utils.logger import logger
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--no-input", action="store_true", help="Use only environment variables")
-    parser.add_argument("--no-dashboard", action="store_true", help="Skip starting the monitoring dashboard")
+    parser.add_argument("--no-input", action="store_true", help="仅使用环境变量")
+    parser.add_argument("--no-dashboard", action="store_true", help="跳过启动监控仪表盘")
     args = parser.parse_args()
 
     cred_mgr = CredentialManager()
     acc_mgr = AccountManager()
     
-    # Load account configurations from config
-    # Main account (Polymarket)
+    # 从配置加载账户配置
+    # 主账户 (Polymarket)
     account_config = config.get_account_config('main_account')
     acc_mgr.add_account(
         "main_account", 
@@ -34,7 +34,7 @@ def main():
         account_config.get('initial_balances', {"USDC": 10000})
     )
     
-    # Binance account
+    # 币安账户
     binance_account_config = config.get_account_config('binance_account')
     acc_mgr.add_account(
         "binance_account", 
@@ -42,187 +42,74 @@ def main():
         binance_account_config.get('initial_balances', {"USDC": 10000, "BTC": 1.0, "ETH": 10.0})
     )
 
-    # Load gateway configurations from config
-    # Polymarket gateway
+    # 从配置加载网关配置
+    # Polymarket网关
     gateway_config = config.get_gateway_config('polymarket')
     poly_gw = PolymarketGateway(
         gateway_config.get('rpc_url', 'https://polygon-rpc.com/'), 
         cred_mgr, 
-        mock=gateway_config.get('mock', True)
+        mock=gateway_config.get('mock', False)
     )
     poly_gw.no_input = args.no_input
     poly_gw.connect()
     
-    # Binance gateway
+    # 币安网关
     binance_config = config.get_gateway_config('binance')
     binance_gw = BinanceGateway(
         cred_mgr, 
-        mock=binance_config.get('mock', True)
+        mock=binance_config.get('mock', False)
     )
     binance_gw.no_input = args.no_input
     binance_gw.connect()
 
     engine = ExecutionEngine(acc_mgr, {"polymarket": poly_gw, "binance": binance_gw})
     
-    # Initialize data service for dashboard
+    # 初始化仪表盘数据服务
     data_service.initialize(engine)
-    logger.info("Data service initialized for dashboard")
+    logger.info("仪表盘数据服务初始化完成")
     
-    # Start dashboard in a separate thread if not disabled
+    # 如果未禁用，在单独线程中启动仪表盘
     if not args.no_dashboard:
-        logger.info("Starting monitoring dashboard...")
+        logger.info("正在启动监控仪表盘...")
+        print("\n=== 启动监控仪表盘 ===")
         dashboard_thread = threading.Thread(target=start_dashboard, daemon=True)
         dashboard_thread.start()
-        # Give dashboard time to start
-        time.sleep(2)
+        # 给仪表盘启动时间
+        print("给仪表盘启动时间...")
+        time.sleep(5)  # 增加睡眠时间以确保仪表盘有足够时间启动
 
-    inst = Instrument(
-        symbol="0x1234...abcd",
-        base_asset="USDC",
-        quote_asset="USDC",
-        min_order_size=Decimal('1'),
-        tick_size=Decimal('0.01'),
-        gateway_name="polymarket"
-    )
+    logger.info("\n=== 交易系统启动完成 ===")
+    logger.info("系统已准备好进行交易操作")
+    logger.info("请查看仪表盘进行监控和控制")
+    
+    # 打印启动消息到控制台
+    print("\n交易系统启动成功！")
+    print("仪表盘地址: http://localhost:8501")
+    print("\n系统已准备好进行交易操作。")
+    print("使用仪表盘监控和控制系统。")
 
-    from core.models import Order
-    from core.enums import OrderSide, OrderType
-    
-    # Test 1: Probability-based trading (high probability case)
-    logger.info("=== Test 1: High probability trading ===")
-    market_probabilities_high = {
-        'no_change': Decimal('60'),
-        '25bps_decrease': Decimal('38')  # Total: 98 >= 97
-    }
-    
-    order1 = Order(
-        order_id="test_order_1",
-        instrument=inst,
-        side=OrderSide.BUY,
-        type=OrderType.MARKET,
-        quantity=Decimal('5'),
-        account_id="main_account"
-    )
-    
-    engine.submit_order(order1, market_probabilities_high)
-    
-    # Test 2: Probability-based trading (medium probability case)
-    logger.info("\n=== Test 2: Medium probability trading ===")
-    market_probabilities_medium = {
-        'no_change': Decimal('50'),
-        '25bps_decrease': Decimal('35')  # Total: 85 < 90
-    }
-    
-    order2 = Order(
-        order_id="test_order_2",
-        instrument=inst,
-        side=OrderSide.BUY,
-        type=OrderType.MARKET,
-        quantity=Decimal('5'),
-        account_id="main_account"
-    )
-    
-    engine.submit_order(order2, market_probabilities_medium)
-    
-    # Test 3: Large order monitoring
-    logger.info("\n=== Test 3: Large order monitoring ===")
-    order3 = Order(
-        order_id="test_order_3",
-        instrument=inst,
-        side=OrderSide.BUY,
-        type=OrderType.MARKET,
-        quantity=Decimal('150'),  # Large order
-        account_id="main_account"
-    )
-    
-    engine.submit_order(order3)
-    
-    # Test 4: Event data recording
-    logger.info("\n=== Test 4: Event data recording ===")
-    cpi_data = {
-        'actual': 3.2,
-        'expected': 3.3,
-        'previous': 3.4,
-        'market_reaction': 'positive'
-    }
-    engine.record_event_data('cpi', cpi_data)
-    
-    # Test 5: Liquidity analysis
-    logger.info("\n=== Test 5: Liquidity analysis ===")
-    liquidity_analysis = engine.get_liquidity_analysis(inst.symbol, Decimal('100'))
-    logger.info(f"Liquidity analysis: {liquidity_analysis}")
-    
-    # Test 6: Large orders summary
-    logger.info("\n=== Test 6: Large orders summary ===")
-    large_orders_summary = engine.get_large_orders_summary()
-    logger.info(f"Large orders summary: {large_orders_summary}")
-    
-    # Test 7: Binance gateway functionality
-    logger.info("\n=== Test 7: Binance gateway functionality ===")
-    try:
-        # Test Binance account balance
-        binance_balance = binance_gw.get_account_balance()
-        logger.info(f"Binance account balance: {binance_balance}")
-        
-        # Test specific coin balance
-        usdc_balance = binance_gw.get_account_balance('USDC')
-        logger.info(f"Binance USDC balance: {usdc_balance}")
-        
-        # Test deposit history
-        deposit_history = binance_gw.deposit_history('USDC')
-        logger.info(f"Binance deposit history (USDC): {deposit_history}")
-        
-        # Test withdraw history
-        withdraw_history = binance_gw.withdraw_history('USDC')
-        logger.info(f"Binance withdraw history (USDC): {withdraw_history}")
-        
-        # Test withdrawal (simulated)
-        withdraw_result = binance_gw.withdraw(
-            coin='USDC',
-            amount=100.0,
-            address='0xWithdrawAddress12345678901234567890123456789012',
-            network='BSC'
-        )
-        logger.info(f"Binance withdrawal result: {withdraw_result}")
-        
-    except Exception as e:
-        logger.error(f"Error testing Binance gateway: {e}")
-    
-    logger.info("\n=== Test Results ===")
-    logger.info("1. High probability trading: Should be accepted")
-    logger.info("2. Medium probability trading: Should be rejected (below 90%)")
-    logger.info("3. Large order monitoring: Should record the 150-unit order")
-    logger.info("4. Event data recording: Should record CPI data")
-    logger.info("5. Liquidity analysis: Should provide analysis results")
-    logger.info("6. Large orders summary: Should show summary data")
-    logger.info("7. Binance gateway: Should show balance and transaction history")
-    
-    logger.info("\nDemo completed. Check the dashboard for monitoring.")
-    
-    # Print test completion message to console
-    print("\nTest completed successfully! Check logs for details.")
-    print("\nMonitoring dashboard is starting...")
-    print("Dashboard will be available at: http://localhost:8501")
-
-# Function to start Streamlit dashboard
+# 启动Streamlit仪表盘函数
 def start_dashboard():
-    """Start Streamlit dashboard in a separate thread"""
+    """在单独线程中启动Streamlit仪表盘"""
     import subprocess
     import sys
+    import time
     
     try:
-        # Start Streamlit dashboard
+        # 启动Streamlit仪表盘
         streamlit_cmd = [
             sys.executable,
             "-m", "streamlit",
             "run", "dashboard/monitoring.py",
             "--server.headless", "true",
-            "--server.port", "8501"
+            "--server.port", "8501",
+            "--server.address", "localhost"
         ]
         
-        logger.info(f"Starting dashboard with command: {' '.join(streamlit_cmd)}")
+        logger.info(f"正在启动仪表盘，命令: {' '.join(streamlit_cmd)}")
+        print(f"\n正在启动仪表盘，命令: {' '.join(streamlit_cmd)}")
         
-        # Run Streamlit in the background
+        # 在后台运行Streamlit
         process = subprocess.Popen(
             streamlit_cmd,
             stdout=subprocess.PIPE,
@@ -230,18 +117,52 @@ def start_dashboard():
             text=True
         )
         
-        # Monitor the process output
-        for line in iter(process.stdout.readline, ''):
+        # 监控进程输出
+        start_time = time.time()
+        success = False
+        while time.time() - start_time < 30:  # 30秒后超时
+            line = process.stdout.readline()
+            if not line:
+                break
+            
+            print(f"[仪表盘] {line.strip()}")
+            
             if "You can now view your Streamlit app in your browser" in line:
-                logger.info("Dashboard started successfully!")
-                print("\nDashboard started successfully!")
-                print("Local URL: http://localhost:8501")
+                logger.info("仪表盘启动成功！")
+                print("\n仪表盘启动成功！")
+                print("仪表盘地址: http://localhost:8501")
+                success = True
+                break
             elif "Error" in line or "Exception" in line:
-                logger.error(f"Dashboard error: {line.strip()}")
+                logger.error(f"仪表盘错误: {line.strip()}")
+                print(f"\n仪表盘错误: {line.strip()}")
+        
+        if not success:
+            if time.time() - start_time >= 30:
+                logger.error("仪表盘启动超时，超过30秒")
+                print("\n仪表盘启动超时，超过30秒")
+            else:
+                logger.error("仪表盘启动失败，原因未知")
+                print("\n仪表盘启动失败，原因未知")
+        
+        # 保持进程在后台运行
+        def monitor_process():
+            while True:
+                line = process.stdout.readline()
+                if not line:
+                    break
+                if "Error" in line or "Exception" in line:
+                    logger.error(f"仪表盘错误: {line.strip()}")
+        
+        import threading
+        monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+        monitor_thread.start()
             
     except Exception as e:
-        logger.error(f"Failed to start dashboard: {e}")
-        print(f"\nFailed to start dashboard: {e}")
+        logger.error(f"启动仪表盘失败: {e}")
+        print(f"\n启动仪表盘失败: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()

@@ -18,9 +18,12 @@ system:
 gateways:
   polymarket:
     rpc_url: https://polygon-rpc.com/  # RPC节点URL
-    mock: true  # 是否启用模拟模式
+    mock: false  # 是否启用模拟模式
     exchange_address: "0x435AB6645531D3f5391E8B8DA9c0F7b64e6C7e11"  # 交易所合约地址
     usdc_address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # USDC代币合约地址
+    # 账户配置
+    address: "0xd5d4b186871b3f33c4dc36a0714975b30fed60e6"  # Polymarket账户地址
+    api_key: "019bf930-1295-7dcf-8260-78915aac9bc1"  # Polymarket API Key
     # API端点配置
     gamma_api_url: https://gamma-api.polymarket.com  # Gamma API端点
     clob_api_url: https://clob.polymarket.com  # CLOB API端点
@@ -30,7 +33,7 @@ gateways:
     api_timeout: 30  # API请求超时时间（秒）
     api_retries: 3  # API请求重试次数
   binance:
-    mock: true  # 是否启用模拟模式
+    mock: false  # 是否启用模拟模式
     testnet: false  # 是否使用测试网络
     base_url: https://api.binance.com  # API基础URL
 

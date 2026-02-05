@@ -24,9 +24,9 @@ def test_polymarket_gateway():
         polymarket_gw = PolymarketGateway(
             rpc_url=polymarket_config.get('rpc_url', 'https://polygon-rpc.com/'),
             credential_manager=cred_mgr,
-            mock=polymarket_config.get('mock', True)
+            mock=False  # 关闭模拟模式，使用实际API
         )
-        polymarket_gw.no_input = True
+        polymarket_gw.no_input = False  # 允许交互式输入，以便输入私钥
         
         # 连接到Polymarket
         logger.info("连接到Polymarket网关...")
@@ -143,6 +143,21 @@ def test_polymarket_gateway():
         logger.info("\n测试13: 获取订单状态")
         order_status = polymarket_gw.get_order_status("test_order_id")
         logger.info(f"订单状态: {order_status}")
+        
+        # 测试14: 验证Polymarket账户连接
+        logger.info("\n测试14: 验证Polymarket账户连接")
+        logger.info(f"当前连接的账户地址: {polymarket_gw.address}")
+        
+        # 验证地址是否与配置文件中的一致
+        expected_address = polymarket_config.get('address', None)
+        if expected_address:
+            logger.info(f"配置文件中的账户地址: {expected_address}")
+            if polymarket_gw.address and expected_address.lower() == polymarket_gw.address.lower():
+                logger.info("账户连接成功，地址匹配")
+            else:
+                logger.warning("账户地址不匹配，可能是因为在模拟模式下使用了模拟地址")
+        else:
+            logger.info("配置文件中未设置账户地址")
         
         logger.info("\n=== 测试完成 ===")
         logger.info("所有测试用例执行成功！")

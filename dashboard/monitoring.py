@@ -404,22 +404,22 @@ class MonitoringDashboard:
         return compute_portfolio()
     
     def run_dashboard(self):
-        """Run the dashboard with real-time updates from backend using WebSocket"""
+        """运行仪表盘，使用WebSocket从后端获取实时更新"""
         st.title('交易系统监控仪表盘')
         
-        # Initialize session state for real-time data
+        # 初始化实时数据的会话状态
         if 'last_refresh' not in st.session_state:
             st.session_state.last_refresh = datetime.now()
         
-        # Start WebSocket server
+        # 启动WebSocket服务器
         self.start_websocket_server()
         
-        # Sidebar for controls
+        # 侧边栏控制
         with st.sidebar:
             st.header('仪表盘控制')
             page_size = st.selectbox('每页显示数量', [50, 100, 200], index=1)
             
-            # Data service status
+            # 数据服务状态
             st.header('数据服务状态')
             if data_service.is_initialized():
                 st.success('数据服务已连接')
@@ -427,20 +427,20 @@ class MonitoringDashboard:
                 components = system_status.get('components', {})
                 for component, status in components.items():
                     if status:
-                        st.success(f'✓ {component.replace("_", " ").title()}')
+                        st.success(f'{component.replace("_", " ").title()}')
                     else:
-                        st.warning(f'⚠️ {component.replace("_", " ").title()}')
+                        st.warning(f'{component.replace("_", " ").title()}')
             else:
                 st.warning('数据服务未初始化')
                 st.info('请先运行主交易系统以初始化数据服务。')
             
-            # WebSocket status
+            # WebSocket状态
             st.header('WebSocket状态')
             st.success('WebSocket服务已启动')
             st.info('数据将通过WebSocket实时更新')
             st.info('WebSocket地址: ws://localhost:8765')
         
-        # Create placeholders for dynamic content
+        # 创建动态内容的占位符
         status_section = st.empty()
         order_section = st.empty()
         liquidity_section = st.empty()
@@ -449,26 +449,26 @@ class MonitoringDashboard:
         system_section = st.empty()
         websocket_status = st.empty()
         
-        # Function to refresh all data
+        # 刷新所有数据的函数
         def refresh_all_data():
-            # Update status section
+            # 更新状态部分
             with status_section.container():
                 st.header('仪表盘状态')
                 if not data_service.is_initialized():
-                    st.warning('⚠️ 仪表盘正在独立模式下运行。无来自后端的实时数据。')
+                    st.warning('仪表盘正在独立模式下运行。无来自后端的实时数据。')
                     st.info('启动主交易系统以获取实时数据。')
                 else:
                     st.success('仪表盘已连接到后端服务。')
                     
-                # Show last refresh time
+                # 显示最后刷新时间
                 st.metric('最后刷新', st.session_state.last_refresh.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
             
-            # Update order section
+            # 更新订单部分
             with order_section.container():
                 st.header('订单状态')
                 order_stats = self.get_order_stats()
                 
-                # Use columns for metrics with improved layout
+                # 使用列布局显示指标
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric('总订单数', order_stats['total_orders'])
                 col2.metric('已成交', order_stats['filled_orders'])
@@ -477,16 +477,16 @@ class MonitoringDashboard:
                 
                 st.metric('总订单规模', f"{order_stats['total_size']:.2f}")
                 
-                # Order Table with pagination
+                # 订单表格（带分页）
                 st.subheader('订单')
                 
-                # Get order data
+                # 获取订单数据
                 current_page = 1
                 df_orders = self._get_order_data(current_page, page_size)
                 
-                # Display order table
+                # 显示订单表格
                 if not df_orders.empty:
-                    # Use st.dataframe with improved options
+                    # 使用改进的选项显示数据框
                     st.dataframe(
                         df_orders,
                         use_container_width=True,
@@ -507,11 +507,11 @@ class MonitoringDashboard:
                 else:
                     st.info('无订单数据可用。启动交易系统以查看订单。')
             
-            # Update liquidity section
+            # 更新流动性部分
             with liquidity_section.container():
                 st.header('市场流动性')
                 
-                # Add liquidity analysis form
+                # 添加流动性分析表单
                 with st.expander('流动性分析'):
                     symbol = st.text_input('交易对', '0x1234...abcd')
                     size = st.number_input('订单规模', min_value=1.0, max_value=1000.0, value=100.0)
@@ -520,7 +520,7 @@ class MonitoringDashboard:
                         with st.spinner('正在分析流动性...'):
                             analysis = data_service.get_liquidity_analysis(symbol, Decimal(str(size)))
                             
-                            # Display analysis results
+                            # 显示分析结果
                             col1, col2, col3 = st.columns(3)
                             col1.metric('流动性评级', analysis['liquidity_rating'])
                             col2.metric('滑点估计', f"{analysis['slippage_estimate']:.4f}")
@@ -528,16 +528,16 @@ class MonitoringDashboard:
                             
                             st.info(analysis['message'])
             
-            # Update event data section
+            # 更新事件数据部分
             with event_section.container():
                 st.header('事件数据')
                 
-                # Get event data
+                # 获取事件数据
                 current_event_page = 1
                 df_events = self._get_event_data(current_event_page, page_size)
                 
                 if not df_events.empty:
-                    # Use st.dataframe with improved options
+                    # 使用改进的选项显示数据框
                     st.dataframe(
                         df_events,
                         use_container_width=True,
@@ -551,16 +551,16 @@ class MonitoringDashboard:
                 else:
                     st.info('无事件数据可用。启动交易系统以查看事件。')
             
-            # Update large orders section
+            # 更新大额订单部分
             with large_order_section.container():
                 st.header('大额订单')
                 
-                # Get large order data
+                # 获取大额订单数据
                 current_large_order_page = 1
                 df_large_orders = self._get_large_order_data(current_large_order_page, page_size)
                 
                 if not df_large_orders.empty:
-                    # Use st.dataframe with improved options
+                    # 使用改进的选项显示数据框
                     st.dataframe(
                         df_large_orders,
                         use_container_width=True,
@@ -577,47 +577,47 @@ class MonitoringDashboard:
                 else:
                     st.info('无大额订单数据可用。启动交易系统以查看大额订单。')
             
-            # Update system status section
+            # 更新系统状态部分
             with system_section.container():
                 st.header('系统状态')
                 system_status = data_service.get_system_status()
                 
-                # Display system metrics
+                # 显示系统指标
                 st.metric('历史订单数', system_status.get('order_history_count', 0))
                 
-                # Show engine status if available
+                # 如果可用，显示引擎状态
                 if data_service.is_initialized():
                     engine_status = data_service.get_engine_status()
                     st.metric('系统健康状态', engine_status.get('system_health', 'unknown'))
                     
-                    # Show gateway information
+                    # 显示网关信息
                     gateways = engine_status.get('gateways', [])
                     if gateways:
                         st.subheader('已连接网关')
                         for gateway in gateways:
-                            st.success(f'✓ {gateway}')
+                            st.success(f'{gateway}')
                     else:
                         st.info('无网关连接。')
             
-            # Update WebSocket status
+            # 更新WebSocket状态
             with websocket_status.container():
                 st.header('WebSocket连接状态')
-                st.success(f'✓ WebSocket服务运行中')
+                st.success(f'WebSocket服务运行中')
                 st.info(f'当前连接数: {len(self._websocket_clients)}')
                 st.info('数据将通过WebSocket实时更新，无需手动刷新')
             
-            # Update Polymarket section
+            # 更新Polymarket部分
             polymarket_section = st.empty()
             with polymarket_section.container():
                 st.header('Polymarket数据')
                 
                 if not self.polymarket_gateway:
-                    st.warning('⚠️ Polymarket网关未初始化。无法显示Polymarket数据。')
+                    st.warning('Polymarket网关未初始化。无法显示Polymarket数据。')
                 else:
-                    # Polymarket data tabs
+                    # Polymarket数据标签页
                     tab1, tab2, tab3, tab4 = st.tabs(['事件', '市场', '持仓', '投资组合'])
                     
-                    # Events tab
+                    # 事件标签页
                     with tab1:
                         st.subheader('Polymarket事件')
                         events_df = self._get_polymarket_events()
@@ -636,7 +636,7 @@ class MonitoringDashboard:
                         else:
                             st.info('无事件数据可用。')
                     
-                    # Markets tab
+                    # 市场标签页
                     with tab2:
                         st.subheader('Polymarket市场')
                         markets_df = self._get_polymarket_markets()
@@ -656,7 +656,7 @@ class MonitoringDashboard:
                         else:
                             st.info('无市场数据可用。')
                     
-                    # Positions tab
+                    # 持仓标签页
                     with tab3:
                         st.subheader('Polymarket持仓')
                         positions_df = self._get_polymarket_positions()
@@ -677,7 +677,7 @@ class MonitoringDashboard:
                         else:
                             st.info('无持仓数据可用。')
                     
-                    # Portfolio tab
+                    # 投资组合标签页
                     with tab4:
                         st.subheader('Polymarket投资组合')
                         portfolio = self._get_polymarket_portfolio()
@@ -686,7 +686,7 @@ class MonitoringDashboard:
                             col1.metric('总价值', f"${portfolio.get('total_value', '0')}")
                             col2.metric('总盈亏', f"${portfolio.get('total_pnl', '0')}")
                             
-                            # Portfolio positions
+                            # 投资组合持仓
                             positions = portfolio.get('positions', [])
                             if positions:
                                 st.subheader('持仓详情')
@@ -703,7 +703,7 @@ class MonitoringDashboard:
                                     }
                                 )
                             
-                            # Portfolio stats
+                            # 投资组合统计
                             stats = portfolio.get('stats', {})
                             if stats:
                                 st.subheader('投资组合统计')
@@ -715,68 +715,68 @@ class MonitoringDashboard:
                         else:
                             st.info('无投资组合数据可用。')
             
-            # Update last refresh time
+            # 更新最后刷新时间
             st.session_state.last_refresh = datetime.now()
         
-        # Initial refresh
+        # 初始刷新
         refresh_all_data()
         
-        # Add a refresh button for manual updates
+        # 添加手动更新的刷新按钮
         if st.button('手动刷新数据'):
             refresh_all_data()
             self.trigger_data_update()
         
-        # Add JavaScript for WebSocket client (Polymarket API compatible)
+        # 添加WebSocket客户端JavaScript代码（兼容Polymarket API）
         st.components.v1.html('''
         <script>
-            // WebSocket client (Polymarket API compatible)
+            // WebSocket客户端（兼容Polymarket API）
             const ws = new WebSocket('ws://localhost:8765');
             
             ws.onopen = function() {
-                console.log('WebSocket connected');
+                console.log('WebSocket已连接');
                 
-                // Send initial subscription message (Polymarket API format)
+                // 发送初始订阅消息（Polymarket API格式）
                 const subscriptionMessage = {
-                    type: 'USER',  // or 'MARKET' for market data
-                    markets: [],  // List of markets to subscribe to
-                    // assets_ids: [],  // List of assets to subscribe to (for MARKET channel)
-                    // auth: {  // Authentication (if required)
+                    type: 'USER',  // 或'MARKET'获取市场数据
+                    markets: [],  // 要订阅的市场列表
+                    // assets_ids: [],  // 要订阅的资产列表（用于MARKET频道）
+                    // auth: {  // 认证（如需）
                     //   token: 'your-auth-token'
                     // }
                 };
                 
-                console.log('Sending subscription message:', subscriptionMessage);
+                console.log('发送订阅消息:', subscriptionMessage);
                 ws.send(JSON.stringify(subscriptionMessage));
             };
             
             ws.onmessage = function(event) {
-                console.log('WebSocket message received:', event.data);
+                console.log('收到WebSocket消息:', event.data);
                 const data = JSON.parse(event.data);
                 
                 if (data.type === 'initial_data') {
-                    console.log('Received initial data:', data);
-                    // Handle initial data
+                    console.log('收到初始数据:', data);
+                    // 处理初始数据
                 } else if (data.type === 'data_update') {
-                    // Update UI elements when data changes
-                    console.log('Updating UI with new data:', data);
-                    // Streamlit will handle UI updates through its own rerun mechanism
+                    // 数据变化时更新UI元素
+                    console.log('使用新数据更新UI:', data);
+                    // Streamlit将通过其自身的重新运行机制处理UI更新
                 } else if (data.type === 'subscription_updated') {
-                    console.log('Subscription updated:', data.subscriptions);
-                    // Handle subscription updates
+                    console.log('订阅已更新:', data.subscriptions);
+                    // 处理订阅更新
                 } else if (data.error) {
-                    console.error('WebSocket error:', data.error);
+                    console.error('WebSocket错误:', data.error);
                 }
             };
             
             ws.onclose = function() {
-                console.log('WebSocket disconnected');
+                console.log('WebSocket已断开连接');
             };
             
             ws.onerror = function(error) {
-                console.error('WebSocket error:', error);
+                console.error('WebSocket错误:', error);
             };
             
-            // Example: Subscribe to additional markets
+            // 示例：订阅其他市场
             function subscribeToMarkets(markets) {
                 if (ws.readyState === WebSocket.OPEN) {
                     const subscribeMessage = {
@@ -787,7 +787,7 @@ class MonitoringDashboard:
                 }
             }
             
-            // Example: Unsubscribe from markets
+            // 示例：取消订阅市场
             function unsubscribeFromMarkets(markets) {
                 if (ws.readyState === WebSocket.OPEN) {
                     const unsubscribeMessage = {
@@ -800,20 +800,20 @@ class MonitoringDashboard:
         </script>
         ''', height=0)
         
-        # Keep the app running and handle WebSocket updates
+        # 保持应用运行并处理WebSocket更新
         try:
-            # Main loop to handle data updates
+            # 处理数据更新的主循环
             while True:
-                # Wait for data update event
+                # 等待数据更新事件
                 if self._data_update_event.wait(1):
-                    # Refresh UI with new data
+                    # 使用新数据刷新UI
                     refresh_all_data()
                     self._data_update_event.clear()
                 
-                # Small delay to prevent CPU usage
+                # 小延迟以防止CPU占用过高
                 time.sleep(0.1)
         finally:
-            # Stop WebSocket server when exiting
+            # 退出时停止WebSocket服务器
             self.stop_websocket_server()
 
 if __name__ == '__main__':
