@@ -89,6 +89,11 @@ def main():
     data_service.initialize(engine)
     logger.info("仪表盘数据服务初始化完成")
     
+    # 启动事件监听器（模拟）
+    event_listener_thread = threading.Thread(target=event_listener, args=(strategy_executor,), daemon=True)
+    event_listener_thread.start()
+    logger.info("事件监听器已启动")
+    
     # 如果未禁用，在单独线程中启动仪表盘
     if not args.no_dashboard:
         logger.info("正在启动监控仪表盘...")
@@ -184,6 +189,115 @@ def start_dashboard():
         print(f"\n启动仪表盘失败: {e}")
         import traceback
         traceback.print_exc()
+
+def event_listener(strategy_executor):
+    """事件监听器（模拟）
+    
+    模拟外部事件的触发，用于测试事件触发的自动下单功能
+    
+    Args:
+        strategy_executor: 策略执行器实例
+    """
+    import time
+    import random
+    
+    # 模拟事件列表
+    mock_events = [
+        'powell_speech',
+        'unemployment_rate',
+        'cpi',
+        'ppi',
+        'fomc_meeting',
+        'gdp',
+        'retail_sales',
+        'nonfarm_payrolls'
+    ]
+    
+    # 模拟事件数据
+    mock_event_data = {
+        'powell_speech': {
+            'title': 'Fed Chair Powell Speech',
+            'content': 'Powell discusses monetary policy and economic outlook',
+            'impact': 'high'
+        },
+        'unemployment_rate': {
+            'rate': 3.8,
+            'previous': 3.9,
+            'change': -0.1,
+            'impact': 'medium'
+        },
+        'cpi': {
+            'rate': 2.1,
+            'previous': 2.2,
+            'change': -0.1,
+            'impact': 'high'
+        },
+        'ppi': {
+            'rate': 1.9,
+            'previous': 2.0,
+            'change': -0.1,
+            'impact': 'medium'
+        },
+        'fomc_meeting': {
+            'decision': 'hold',
+            'rate': 5.25,
+            'statement': 'FOMC decides to hold interest rates steady',
+            'impact': 'high'
+        },
+        'gdp': {
+            'growth_rate': 2.4,
+            'previous': 2.0,
+            'change': 0.4,
+            'impact': 'high'
+        },
+        'retail_sales': {
+            'growth_rate': 0.5,
+            'previous': 0.3,
+            'change': 0.2,
+            'impact': 'medium'
+        },
+        'nonfarm_payrolls': {
+            'jobs_added': 187000,
+            'unemployment_rate': 3.8,
+            'wage_growth': 0.2,
+            'impact': 'high'
+        }
+    }
+    
+    logger.info("事件监听器已启动，开始模拟外部事件")
+    
+    # 模拟事件触发
+    while True:
+        try:
+            # 随机选择一个事件
+            event_name = random.choice(mock_events)
+            event_data = mock_event_data.get(event_name, {})
+            
+            # 模拟事件触发
+            logger.info(f"模拟事件触发: {event_name}")
+            print(f"\n[事件监听器] 模拟事件触发: {event_name}")
+            
+            # 调用策略执行器的事件处理方法
+            result = strategy_executor.handle_event(event_name, event_data)
+            
+            # 打印事件处理结果
+            logger.info(f"事件处理结果: {result}")
+            print(f"[事件监听器] 事件处理结果: {result.get('status')}")
+            if 'order_status' in result:
+                print(f"[事件监听器] 订单状态: {result.get('order_status')}")
+                print(f"[事件监听器] 订单数量: {result.get('order_count', 0)}")
+            
+            # 随机等待一段时间，模拟事件的随机性
+            wait_time = random.randint(30, 120)  # 30-120秒
+            logger.info(f"事件监听器将等待 {wait_time} 秒后触发下一个事件")
+            time.sleep(wait_time)
+            
+        except Exception as e:
+            logger.error(f"事件监听器错误: {e}")
+            import traceback
+            traceback.print_exc()
+            # 等待一段时间后继续
+            time.sleep(30)
 
 if __name__ == "__main__":
     main()

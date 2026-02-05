@@ -342,3 +342,158 @@ class PolymarketStrategy:
                 })
         
         return results
+    
+    def handle_event_trigger(self, event_name: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """处理事件触发的下单
+        
+        Args:
+            event_name: 事件名称
+            event_data: 事件数据
+            
+        Returns:
+            dict: 事件处理结果
+        """
+        try:
+            # 记录事件触发
+            logger.info(f"处理事件触发: {event_name}")
+            
+            # 检查事件是否与Polymarket市场相关
+            related_markets = self._get_related_markets(event_name, event_data)
+            if not related_markets:
+                return {
+                    'event_name': event_name,
+                    'status': 'skipped',
+                    'reason': '没有相关的Polymarket市场'
+                }
+            
+            # 分析相关市场并生成交易信号
+            results = []
+            for market_id in related_markets:
+                try:
+                    # 分析市场
+                    market_analysis = self.analyze_market(market_id)
+                    
+                    # 生成交易信号
+                    signal = self.generate_trade_signal(market_id)
+                    
+                    # 计算订单大小
+                    positions = self.gateway.get_positions()
+                    market_position = next((p for p in positions if p.get('market_id') == market_id), None)
+                    order_size = self._calculate_order_size(market_position)
+                    
+                    # 添加到结果
+                    results.append({
+                        'market_id': market_id,
+                        'signal': signal,
+                        'order_size': order_size,
+                        'analysis': market_analysis
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"分析市场 {market_id} 失败: {e}")
+                    results.append({
+                        'market_id': market_id,
+                        'error': str(e)
+                    })
+            
+            return {
+                'event_name': event_name,
+                'status': 'processed',
+                'related_markets': related_markets,
+                'results': results,
+                'timestamp': self._get_current_timestamp()
+            }
+            
+        except Exception as e:
+            logger.error(f"处理事件触发失败: {e}")
+            return {
+                'event_name': event_name,
+                'status': 'error',
+                'error': str(e)
+            }
+    
+    def _get_related_markets(self, event_name: str, event_data: Dict[str, Any]) -> List[str]:
+        """获取与事件相关的市场ID列表
+        
+        Args:
+            event_name: 事件名称
+            event_data: 事件数据
+            
+        Returns:
+            list: 相关市场ID列表
+        """
+        related_markets = []
+        
+        try:
+            # 获取所有市场
+            markets = self.gateway.get_markets()
+            
+            # 过滤与事件相关的市场
+            for market in markets:
+                market_id = market.get('market_id')
+                question = market.get('question', '').lower()
+                
+                # 简单的关键词匹配
+                if self._is_market_related_to_event(question, event_name, event_data):
+                    related_markets.append(market_id)
+            
+        except Exception as e:
+            logger.error(f"获取相关市场失败: {e}")
+        
+        return related_markets
+    
+    def _is_market_related_to_event(self, market_question: str, event_name: str, event_data: Dict[str, Any]) -> bool:
+        """判断市场是否与事件相关
+        
+        Args:
+            market_question: 市场问题
+            event_name: 事件名称
+            event_data: 事件数据
+            
+        Returns:
+            bool: 是否相关
+        """
+        # 简单的关键词匹配逻辑
+        event_keywords = self._get_event_keywords(event_name, event_data)
+        
+        for keyword in event_keywords:
+            if keyword.lower() in market_question:
+                return True
+        
+        return False
+    
+    def _get_event_keywords(self, event_name: str, event_data: Dict[str, Any]) -> List[str]:
+        """获取事件相关的关键词
+        
+        Args:
+            event_name: 事件名称
+            event_data: 事件数据
+            
+        Returns:
+            list: 关键词列表
+        """
+        # 基于事件名称生成关键词
+        keyword_map = {
+            'powell_speech': ['powell', 'fed', 'federal reserve'],
+            'unemployment_rate': ['unemployment', 'jobless', 'employment'],
+            'cpi': ['cpi', 'inflation', 'consumer price'],
+            'ppi': ['ppi', 'producer price'],
+            'fomc_meeting': ['fomc', 'fed meeting', 'interest rate'],
+            'gdp': ['gdp', 'gross domestic product'],
+            'retail_sales': ['retail sales', 'consumer spending'],
+            'nonfarm_payrolls': ['nonfarm payrolls', 'jobs report', 'employment report']
+        }
+        
+        # 获取默认关键词
+        keywords = keyword_map.get(event_name, [event_name])
+        
+        # 从事件数据中提取额外关键词
+        if event_data:
+            # 示例：从事件数据中提取关键词
+            for key, value in event_data.items():
+                if isinstance(value, str):
+                    # 简单的分词
+                    extra_keywords = value.split()
+                    keywords.extend(extra_keywords[:5])  # 最多添加5个额外关键词
+        
+        return keywords

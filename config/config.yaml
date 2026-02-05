@@ -78,3 +78,18 @@ strategy:
     max_orders_per_batch: 10  # 每批最大订单数
     monitored_markets: []  # 监控的市场ID列表
     auto_start: true  # 是否自动启动策略执行器
+  event_subscription:
+    enabled: true  # 是否启用事件订阅
+    subscribed_events:  # 要订阅的事件列表
+      - powell_speech  # 鲍威尔讲话
+      - unemployment_rate  # 失业率
+      - cpi  # 消费者价格指数
+      - ppi  # 生产者价格指数
+      - fomc_meeting  # 美联储会议
+      - gdp  # 国内生产总值
+      - retail_sales  # 零售销售
+      - nonfarm_payrolls  # 非农就业数据
+    min_confidence: "MEDIUM"  # 事件触发的最小置信度
+    max_orders_per_event: 5  # 每个事件的最大订单数
+    order_size_multiplier: 1.0  # 事件触发的订单大小倍数
+    cooldown_period: 60  # 事件触发后的冷却期（秒）

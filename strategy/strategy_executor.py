@@ -35,6 +35,18 @@ class StrategyExecutor:
         self.enabled = executor_config.get('enabled', True)  # 是否启用策略执行器
         self.auto_start = executor_config.get('auto_start', True)  # 是否自动启动策略执行器
         
+        # 事件订阅配置
+        strategy_config = config.get_strategy_config('event_subscription') or {}
+        self.event_subscription_enabled = strategy_config.get('enabled', True)  # 是否启用事件订阅
+        self.subscribed_events = strategy_config.get('subscribed_events', [])  # 要订阅的事件列表
+        self.event_min_confidence = strategy_config.get('min_confidence', 'MEDIUM')  # 事件触发的最小置信度
+        self.max_orders_per_event = strategy_config.get('max_orders_per_event', 5)  # 每个事件的最大订单数
+        self.order_size_multiplier = strategy_config.get('order_size_multiplier', 1.0)  # 事件触发的订单大小倍数
+        self.cooldown_period = strategy_config.get('cooldown_period', 60)  # 事件触发后的冷却期（秒）
+        
+        # 事件冷却期跟踪
+        self._event_cooldowns = {}
+        
         # 核心组件
         self.execution_engine = execution_engine
         self.polymarket_strategy = polymarket_strategy
@@ -361,3 +373,275 @@ class StrategyExecutor:
             'monitored_markets': self.monitored_markets,
             'market_count': len(self.monitored_markets)
         }
+    
+    def handle_event(self, event_name: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """处理外部事件触发的下单
+        
+        Args:
+            event_name: 事件名称
+            event_data: 事件数据
+            
+        Returns:
+            dict: 事件处理结果
+        """
+        try:
+            logger.info(f"收到事件触发: {event_name}")
+            
+            # 检查事件订阅是否启用
+            if not self.event_subscription_enabled:
+                logger.warning("事件订阅已禁用")
+                return {
+                    'event_name': event_name,
+                    'status': 'disabled',
+                    'reason': '事件订阅已禁用'
+                }
+            
+            # 检查事件是否在订阅列表中
+            if event_name not in self.subscribed_events:
+                logger.warning(f"事件 {event_name} 不在订阅列表中")
+                return {
+                    'event_name': event_name,
+                    'status': 'not_subscribed',
+                    'reason': '事件不在订阅列表中'
+                }
+            
+            # 检查事件冷却期
+            if self._is_in_cooldown(event_name):
+                logger.warning(f"事件 {event_name} 仍在冷却期中")
+                return {
+                    'event_name': event_name,
+                    'status': 'cooldown',
+                    'reason': '事件仍在冷却期中'
+                }
+            
+            # 调用策略的事件处理方法
+            event_result = self.polymarket_strategy.handle_event_trigger(event_name, event_data)
+            
+            # 检查事件处理结果
+            if event_result.get('status') != 'processed':
+                logger.warning(f"事件处理未完成: {event_result.get('reason', '未知原因')}")
+                return event_result
+            
+            # 处理相关市场的交易信号
+            results = event_result.get('results', [])
+            if not results:
+                return {
+                    **event_result,
+                    'order_status': 'no_orders'
+                }
+            
+            # 准备订单
+            orders = []
+            for result in results:
+                try:
+                    # 检查是否有错误
+                    if 'error' in result:
+                        logger.error(f"市场 {result.get('market_id')} 分析失败: {result.get('error')}")
+                        continue
+                    
+                    # 获取交易信号
+                    signal = result.get('signal', {})
+                    market_id = result.get('market_id')
+                    order_size = result.get('order_size', Decimal('0'))
+                    
+                    # 应用订单大小倍数
+                    order_size = order_size * Decimal(str(self.order_size_multiplier))
+                    
+                    # 检查信号是否有效
+                    if not self._is_valid_event_signal(signal, order_size):
+                        logger.debug(f"信号无效，跳过: {market_id}, 信号: {signal.get('signal')}, 置信度: {signal.get('confidence')}")
+                        continue
+                    
+                    # 检查每事件订单数限制
+                    if len(orders) >= self.max_orders_per_event:
+                        logger.warning(f"已达到每事件最大订单数: {self.max_orders_per_event}")
+                        break
+                    
+                    # 创建订单
+                    order = self._create_order_from_event(signal, market_id, order_size)
+                    if order:
+                        orders.append((order, None))  # 暂时不提供市场概率数据
+                        logger.info(f"已为事件创建订单: {order.order_id}, 市场: {market_id}, 方向: {order.side}, 数量: {order.quantity}")
+                    else:
+                        logger.warning(f"为事件创建订单失败: {market_id}")
+                        
+                except Exception as e:
+                    logger.error(f"处理事件结果失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # 批量提交订单
+            order_result = None
+            if orders:
+                logger.info(f"准备为事件提交 {len(orders)} 个订单")
+                start_time = time.time()
+                order_result = self.execution_engine.submit_orders_batch(orders)
+                execution_time = time.time() - start_time
+                logger.info(f"事件订单提交完成，耗时: {execution_time:.2f}秒，结果: {order_result}")
+                
+                # 设置事件冷却期
+                self._set_cooldown(event_name)
+            else:
+                logger.info("没有有效的事件订单需要提交")
+            
+            return {
+                **event_result,
+                'order_status': 'submitted' if orders else 'no_orders',
+                'order_count': len(orders),
+                'order_result': order_result
+            }
+            
+        except Exception as e:
+            logger.error(f"处理事件失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'event_name': event_name,
+                'status': 'error',
+                'error': str(e)
+            }
+    
+    def _is_in_cooldown(self, event_name: str) -> bool:
+        """检查事件是否在冷却期中
+        
+        Args:
+            event_name: 事件名称
+            
+        Returns:
+            bool: 是否在冷却期中
+        """
+        try:
+            cooldown_time = self._event_cooldowns.get(event_name, 0)
+            current_time = time.time()
+            return current_time < cooldown_time
+        except Exception as e:
+            logger.error(f"检查事件冷却期失败: {e}")
+            return False
+    
+    def _set_cooldown(self, event_name: str):
+        """设置事件冷却期
+        
+        Args:
+            event_name: 事件名称
+        """
+        try:
+            current_time = time.time()
+            cooldown_time = current_time + self.cooldown_period
+            self._event_cooldowns[event_name] = cooldown_time
+            logger.info(f"为事件 {event_name} 设置冷却期，持续 {self.cooldown_period} 秒")
+        except Exception as e:
+            logger.error(f"设置事件冷却期失败: {e}")
+    
+    def _is_valid_event_signal(self, signal: Dict[str, Any], order_size: Decimal) -> bool:
+        """检查事件触发的信号是否有效
+        
+        Args:
+            signal: 交易信号
+            order_size: 订单大小
+            
+        Returns:
+            bool: 信号是否有效
+        """
+        try:
+            # 检查信号类型
+            signal_type = signal.get('signal', 'HOLD')
+            if signal_type == 'HOLD':
+                return False
+            
+            # 检查置信度
+            confidence = signal.get('confidence', 'LOW')
+            if self.confidence_levels.get(confidence, 0) < self.confidence_levels.get(self.event_min_confidence, 2):
+                return False
+            
+            # 检查订单大小
+            if order_size <= Decimal('0'):
+                return False
+            
+            return True
+        except Exception as e:
+            logger.error(f"检查事件信号有效性失败: {e}")
+            return False
+    
+    def _create_order_from_event(self, signal: Dict[str, Any], market_id: str, order_size: Decimal) -> Optional[Order]:
+        """根据事件触发的信号创建订单
+        
+        Args:
+            signal: 交易信号
+            market_id: 市场ID
+            order_size: 订单大小
+            
+        Returns:
+            Optional[Order]: 创建的订单对象
+        """
+        try:
+            signal_type = signal.get('signal')
+            
+            if not market_id:
+                logger.error("创建订单失败: 缺少市场ID")
+                return None
+            
+            logger.debug(f"开始为事件创建订单: 市场ID={market_id}, 信号={signal_type}, 订单大小={order_size}")
+            
+            # 获取市场信息
+            try:
+                market_info = self.polymarket_gateway.get_market(market_id)
+                if not market_info:
+                    logger.error(f"获取市场信息失败: {market_id}")
+                    return None
+                logger.debug(f"获取市场信息成功: {market_info.get('question', market_id)}")
+            except Exception as e:
+                logger.error(f"获取市场信息失败 (市场ID: {market_id}): {e}")
+                return None
+            
+            # 确定订单方向
+            side = 'buy' if signal_type == 'BUY' else 'sell'
+            if signal_type == 'ARBITRAGE':
+                # 对于套利信号，需要根据市场情况确定方向
+                best_bid = signal.get('best_bid', Decimal('0'))
+                best_ask = signal.get('best_ask', Decimal('0'))
+                if best_bid > best_ask:
+                    side = 'buy'
+                    logger.debug(f"套利信号 - 选择买入方向: 最佳买入价={best_bid}, 最佳卖出价={best_ask}")
+                else:
+                    side = 'sell'
+                    logger.debug(f"套利信号 - 选择卖出方向: 最佳买入价={best_bid}, 最佳卖出价={best_ask}")
+            else:
+                logger.debug(f"确定订单方向: {side} (信号: {signal_type})")
+            
+            # 创建交易品种
+            try:
+                instrument = Instrument(
+                    symbol=market_id,
+                    name=market_info.get('question', market_id),
+                    gateway_name='polymarket',
+                    precision=2
+                )
+                logger.debug(f"创建交易品种成功: {instrument.name}")
+            except Exception as e:
+                logger.error(f"创建交易品种失败: {e}")
+                return None
+            
+            # 创建订单
+            try:
+                order_id = f"event_{int(time.time())}_{market_id[:8]}"
+                order = Order(
+                    order_id=order_id,
+                    instrument=instrument,
+                    side=side,
+                    type='market',  # 使用市价单
+                    quantity=order_size,
+                    price=None,  # 市价单不需要价格
+                    account_id='main_account',
+                    timestamp=datetime.now().isoformat()
+                )
+                
+                logger.info(f"为事件创建订单成功: {order.order_id}, 市场: {market_id}, 方向: {side}, 数量: {order_size}")
+                return order
+            except Exception as e:
+                logger.error(f"创建订单对象失败: {e}")
+                return None
+        except Exception as e:
+            logger.error(f"为事件创建订单失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
