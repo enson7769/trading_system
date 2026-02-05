@@ -71,3 +71,10 @@ strategy:
     min_price_difference: 0.01  # 最小价格差异阈值
     max_position_size: 1000  # 最大持仓大小
     max_order_size: 100  # 最大订单大小
+  executor:
+    enabled: true  # 是否启用策略执行器
+    check_interval: 30  # 策略检查间隔（秒）
+    min_confidence: "MEDIUM"  # 最小置信度
+    max_orders_per_batch: 10  # 每批最大订单数
+    monitored_markets: []  # 监控的市场ID列表
+    auto_start: true  # 是否自动启动策略执行器

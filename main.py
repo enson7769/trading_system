@@ -14,6 +14,8 @@ from security.credential_manager import CredentialManager
 from dashboard.data_service import data_service
 from config.config import config
 from utils.logger import logger
+from strategy.polymarket_strategy import PolymarketStrategy
+from strategy.strategy_executor import StrategyExecutor
 
 def main():
     parser = argparse.ArgumentParser()
@@ -49,6 +51,39 @@ def main():
 
 
     engine = ExecutionEngine(acc_mgr, {"polymarket": poly_gw})
+    
+    # 初始化Polymarket策略
+    poly_strategy = PolymarketStrategy(poly_gw)
+    logger.info("Polymarket策略初始化完成")
+    
+    # 初始化策略执行器
+    strategy_executor = StrategyExecutor(engine, poly_strategy, poly_gw)
+    
+    # 添加一些默认的监控市场
+    # 这里可以从配置文件加载，或者通过API获取热门市场
+    default_markets = []
+    try:
+        # 尝试获取一些事件和市场
+        events = poly_gw.get_events()
+        if events:
+            for event in events[:3]:  # 只获取前3个事件
+                markets = event.get('markets', [])
+                for market in markets[:2]:  # 每个事件只获取前2个市场
+                    market_id = market.get('id')
+                    if market_id:
+                        default_markets.append(market_id)
+        
+        if default_markets:
+            strategy_executor.set_markets(default_markets)
+            logger.info(f"已添加默认监控市场: {default_markets}")
+        else:
+            logger.warning("未添加默认监控市场，监控列表为空")
+    except Exception as e:
+        logger.error(f"获取默认市场失败: {e}")
+    
+    # 启动策略执行器
+    strategy_executor.start()
+    logger.info("策略执行器启动完成")
     
     # 初始化仪表盘数据服务
     data_service.initialize(engine)

@@ -21,7 +21,7 @@ class PolymarketStrategy:
             max_order_size: 最大订单大小
         """
         # 加载配置
-        strategy_config = config.get_strategy_config('polymarket', {})
+        strategy_config = config.get_strategy_config('polymarket')
         
         # 使用提供的值或配置值或默认值
         if min_price_difference is None:
