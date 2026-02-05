@@ -21,6 +21,14 @@ gateways:
     mock: true  # 是否启用模拟模式
     exchange_address: "0x435AB6645531D3f5391E8B8DA9c0F7b64e6C7e11"  # 交易所合约地址
     usdc_address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # USDC代币合约地址
+    # API端点配置
+    gamma_api_url: https://gamma-api.polymarket.com  # Gamma API端点
+    clob_api_url: https://clob.polymarket.com  # CLOB API端点
+    data_api_url: https://data-api.polymarket.com  # Data API端点
+    websocket_url: wss://ws-subscriptions-clob.polymarket.com  # WebSocket API端点
+    # API配置
+    api_timeout: 30  # API请求超时时间（秒）
+    api_retries: 3  # API请求重试次数
   binance:
     mock: true  # 是否启用模拟模式
     testnet: false  # 是否使用测试网络
@@ -66,3 +74,7 @@ strategy:
   probability:
     min_total_probability: 90  # 最小总概率阈值
     safe_total_probability: 97  # 安全总概率阈值
+  polymarket:
+    min_price_difference: 0.01  # 最小价格差异阈值
+    max_position_size: 1000  # 最大持仓大小
+    max_order_size: 100  # 最大订单大小

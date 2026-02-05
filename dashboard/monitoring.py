@@ -17,6 +17,9 @@ import asyncio
 import threading
 import websockets
 import json
+from gateways.polymarket_gateway import PolymarketGateway
+from security.credential_manager import CredentialManager
+from config.config import config
 
 class MonitoringDashboard:
     def __init__(self):
@@ -30,6 +33,30 @@ class MonitoringDashboard:
         self._stop_event = threading.Event()
         self._data_update_event = threading.Event()
         self._data_update_event.set()  # Initial data update
+        
+        # Initialize Polymarket Gateway
+        try:
+            # Get gateway config
+            polymarket_config = config.get_gateway_config('polymarket')
+            rpc_url = polymarket_config.get('rpc_url', 'https://polygon-rpc.com/')
+            mock = polymarket_config.get('mock', True)
+            
+            # Create credential manager
+            self.credential_manager = CredentialManager()
+            
+            # Create Polymarket gateway
+            self.polymarket_gateway = PolymarketGateway(
+                rpc_url=rpc_url,
+                credential_manager=self.credential_manager,
+                mock=mock
+            )
+            
+            # Connect to Polymarket
+            self.polymarket_gateway.connect()
+            logger.info("Polymarket gateway initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Polymarket gateway: {e}")
+            self.polymarket_gateway = None
     
     def _invalidate_cache(self, key: str):
         """Invalidate specific cache entry"""
@@ -59,23 +86,121 @@ class MonitoringDashboard:
         return self._get_cached('order_stats', compute_order_stats)
     
     async def _websocket_handler(self, websocket, path):
-        """Handle WebSocket connections"""
+        """Handle WebSocket connections according to Polymarket API spec"""
         # Register client
         self._websocket_clients.add(websocket)
         logger.info(f"WebSocket client connected. Total clients: {len(self._websocket_clients)}")
         
+        # Client subscription state
+        client_subscriptions = {
+            'user': [],  # user channel subscriptions (markets)
+            'market': []  # market channel subscriptions (assets_ids)
+        }
+        
         try:
-            # Send initial data
-            initial_data = {
-                'type': 'initial_data',
-                'order_stats': self.get_order_stats()
-            }
-            await websocket.send(json.dumps(initial_data))
+            # Wait for initial subscription message
+            initial_message = await websocket.recv()
+            logger.info(f"Received initial WebSocket message: {initial_message}")
             
-            # Listen for messages
+            try:
+                subscription_data = json.loads(initial_message)
+                
+                # Validate subscription message
+                if 'type' not in subscription_data:
+                    await websocket.send(json.dumps({
+                        'error': 'Missing required field: type'
+                    }))
+                    return
+                
+                # Handle authentication (if provided)
+                if 'auth' in subscription_data:
+                    logger.info("Authentication provided")
+                    # In a real system, validate the auth credentials
+                
+                # Handle channel subscriptions
+                channel_type = subscription_data['type'].upper()
+                
+                if channel_type == 'USER':
+                    # User channel - subscribe to markets
+                    markets = subscription_data.get('markets', [])
+                    client_subscriptions['user'] = markets
+                    logger.info(f"User channel subscribed to markets: {markets}")
+                    
+                elif channel_type == 'MARKET':
+                    # Market channel - subscribe to assets
+                    assets_ids = subscription_data.get('assets_ids', [])
+                    client_subscriptions['market'] = assets_ids
+                    logger.info(f"Market channel subscribed to assets: {assets_ids}")
+                
+                # Send initial data based on subscription
+                initial_data = {
+                    'type': 'initial_data',
+                    'channel': channel_type,
+                    'order_stats': self.get_order_stats(),
+                    'subscriptions': client_subscriptions
+                }
+                await websocket.send(json.dumps(initial_data))
+                
+            except json.JSONDecodeError:
+                await websocket.send(json.dumps({
+                    'error': 'Invalid JSON format'
+                }))
+                return
+            except Exception as e:
+                await websocket.send(json.dumps({
+                    'error': f'Invalid subscription message: {str(e)}'
+                }))
+                return
+            
+            # Listen for subsequent messages
             async for message in websocket:
-                # Handle client messages if needed
-                pass
+                try:
+                    msg_data = json.loads(message)
+                    operation = msg_data.get('operation', '').lower()
+                    
+                    if operation in ['subscribe', 'unsubscribe']:
+                        # Handle subscribe/unsubscribe operations
+                        if 'markets' in msg_data:
+                            # User channel subscription
+                            if operation == 'subscribe':
+                                client_subscriptions['user'].extend(msg_data['markets'])
+                                # Remove duplicates
+                                client_subscriptions['user'] = list(set(client_subscriptions['user']))
+                            else:
+                                client_subscriptions['user'] = [
+                                    market for market in client_subscriptions['user'] 
+                                    if market not in msg_data['markets']
+                                ]
+                            logger.info(f"User channel {operation}d to markets: {msg_data['markets']}")
+                            
+                        elif 'assets_ids' in msg_data:
+                            # Market channel subscription
+                            if operation == 'subscribe':
+                                client_subscriptions['market'].extend(msg_data['assets_ids'])
+                                # Remove duplicates
+                                client_subscriptions['market'] = list(set(client_subscriptions['market']))
+                            else:
+                                client_subscriptions['market'] = [
+                                    asset_id for asset_id in client_subscriptions['market'] 
+                                    if asset_id not in msg_data['assets_ids']
+                                ]
+                            logger.info(f"Market channel {operation}d to assets: {msg_data['assets_ids']}")
+                        
+                        # Send confirmation
+                        await websocket.send(json.dumps({
+                            'type': 'subscription_updated',
+                            'subscriptions': client_subscriptions
+                        }))
+                    
+                except json.JSONDecodeError:
+                    await websocket.send(json.dumps({
+                        'error': 'Invalid JSON format'
+                    }))
+                except Exception as e:
+                    await websocket.send(json.dumps({
+                        'error': f'Error processing message: {str(e)}'
+                    }))
+        
         except websockets.exceptions.ConnectionClosed:
             logger.info("WebSocket client disconnected")
         finally:
@@ -95,22 +220,26 @@ class MonitoringDashboard:
                     self._data_update_event.clear()
     
     async def _broadcast_data_update(self):
-        """Broadcast data updates to all WebSocket clients"""
+        """Broadcast data updates to all WebSocket clients based on their subscriptions"""
         if not self._websocket_clients:
             return
         
         try:
-            # Prepare update data
-            update_data = {
-                'type': 'data_update',
-                'order_stats': self.get_order_stats(),
-                'timestamp': datetime.now().isoformat()
-            }
+            # Get current order stats
+            order_stats = self.get_order_stats()
+            timestamp = datetime.now().isoformat()
             
-            # Send to all clients
+            # Send to all clients with appropriate data based on their subscriptions
             disconnected = []
             for client in self._websocket_clients:
                 try:
+                    # For simplicity, we'll send the same data to all clients
+                    # In a real system, you would filter data based on client subscriptions
+                    update_data = {
+                        'type': 'data_update',
+                        'order_stats': order_stats,
+                        'timestamp': timestamp
+                    }
                     await client.send(json.dumps(update_data))
                 except websockets.exceptions.ConnectionClosed:
                     disconnected.append(client)
@@ -203,6 +332,77 @@ class MonitoringDashboard:
         
         return compute_large_order_data()
     
+    # Polymarket data methods
+    def _get_polymarket_events(self) -> pd.DataFrame:
+        """Get Polymarket events"""
+        if not self.polymarket_gateway:
+            return pd.DataFrame()
+        
+        def compute_events():
+            events = self.polymarket_gateway.get_events()
+            event_data = []
+            for event in events:
+                event_data.append({
+                    'Event ID': event.get('id', ''),
+                    'Title': event.get('title', ''),
+                    'Description': event.get('description', ''),
+                    'Categories': ', '.join(event.get('categories', []))
+                })
+            return pd.DataFrame(event_data)
+        
+        return compute_events()
+    
+    def _get_polymarket_markets(self, event_id: str = None) -> pd.DataFrame:
+        """Get Polymarket markets"""
+        if not self.polymarket_gateway:
+            return pd.DataFrame()
+        
+        def compute_markets():
+            markets = self.polymarket_gateway.get_markets(event_id)
+            market_data = []
+            for market in markets:
+                market_data.append({
+                    'Market ID': market.get('id', ''),
+                    'Event ID': market.get('event_id', ''),
+                    'Question': market.get('question', ''),
+                    'Outcomes': ', '.join(market.get('outcomes', [])),
+                    'Status': market.get('status', '')
+                })
+            return pd.DataFrame(market_data)
+        
+        return compute_markets()
+    
+    def _get_polymarket_positions(self) -> pd.DataFrame:
+        """Get Polymarket positions"""
+        if not self.polymarket_gateway:
+            return pd.DataFrame()
+        
+        def compute_positions():
+            positions = self.polymarket_gateway.get_positions()
+            position_data = []
+            for position in positions:
+                position_data.append({
+                    'Market ID': position.get('market_id', ''),
+                    'Outcome': position.get('outcome', ''),
+                    'Size': float(position.get('size', '0')),
+                    'Avg Price': float(position.get('avg_price', '0')),
+                    'Current Price': float(position.get('current_price', '0')),
+                    'PnL': float(position.get('pnl', '0'))
+                })
+            return pd.DataFrame(position_data)
+        
+        return compute_positions()
+    
+    def _get_polymarket_portfolio(self) -> Dict[str, Any]:
+        """Get Polymarket portfolio"""
+        if not self.polymarket_gateway:
+            return {}
+        
+        def compute_portfolio():
+            return self.polymarket_gateway.get_portfolio()
+        
+        return compute_portfolio()
+    
     def run_dashboard(self):
         """Run the dashboard with real-time updates from backend using WebSocket"""
         st.title('交易系统监控仪表盘')
@@ -222,7 +422,7 @@ class MonitoringDashboard:
             # Data service status
             st.header('数据服务状态')
             if data_service.is_initialized():
-                st.success('✓ 数据服务已连接')
+                st.success('数据服务已连接')
                 system_status = data_service.get_system_status()
                 components = system_status.get('components', {})
                 for component, status in components.items():
@@ -231,12 +431,12 @@ class MonitoringDashboard:
                     else:
                         st.warning(f'⚠️ {component.replace("_", " ").title()}')
             else:
-                st.warning('⚠️ 数据服务未初始化')
+                st.warning('数据服务未初始化')
                 st.info('请先运行主交易系统以初始化数据服务。')
             
             # WebSocket status
             st.header('WebSocket状态')
-            st.success('✓ WebSocket服务已启动')
+            st.success('WebSocket服务已启动')
             st.info('数据将通过WebSocket实时更新')
             st.info('WebSocket地址: ws://localhost:8765')
         
@@ -258,7 +458,7 @@ class MonitoringDashboard:
                     st.warning('⚠️ 仪表盘正在独立模式下运行。无来自后端的实时数据。')
                     st.info('启动主交易系统以获取实时数据。')
                 else:
-                    st.success('✓ 仪表盘已连接到后端服务。')
+                    st.success('仪表盘已连接到后端服务。')
                     
                 # Show last refresh time
                 st.metric('最后刷新', st.session_state.last_refresh.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3])
@@ -406,6 +606,115 @@ class MonitoringDashboard:
                 st.info(f'当前连接数: {len(self._websocket_clients)}')
                 st.info('数据将通过WebSocket实时更新，无需手动刷新')
             
+            # Update Polymarket section
+            polymarket_section = st.empty()
+            with polymarket_section.container():
+                st.header('Polymarket数据')
+                
+                if not self.polymarket_gateway:
+                    st.warning('⚠️ Polymarket网关未初始化。无法显示Polymarket数据。')
+                else:
+                    # Polymarket data tabs
+                    tab1, tab2, tab3, tab4 = st.tabs(['事件', '市场', '持仓', '投资组合'])
+                    
+                    # Events tab
+                    with tab1:
+                        st.subheader('Polymarket事件')
+                        events_df = self._get_polymarket_events()
+                        if not events_df.empty:
+                            st.dataframe(
+                                events_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    'Event ID': st.column_config.TextColumn('事件ID', width='small'),
+                                    'Title': st.column_config.TextColumn('标题', width='medium'),
+                                    'Description': st.column_config.TextColumn('描述', width='large'),
+                                    'Categories': st.column_config.TextColumn('类别', width='small')
+                                }
+                            )
+                        else:
+                            st.info('无事件数据可用。')
+                    
+                    # Markets tab
+                    with tab2:
+                        st.subheader('Polymarket市场')
+                        markets_df = self._get_polymarket_markets()
+                        if not markets_df.empty:
+                            st.dataframe(
+                                markets_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    'Market ID': st.column_config.TextColumn('市场ID', width='small'),
+                                    'Event ID': st.column_config.TextColumn('事件ID', width='small'),
+                                    'Question': st.column_config.TextColumn('问题', width='medium'),
+                                    'Outcomes': st.column_config.TextColumn('结果选项', width='medium'),
+                                    'Status': st.column_config.TextColumn('状态', width='small')
+                                }
+                            )
+                        else:
+                            st.info('无市场数据可用。')
+                    
+                    # Positions tab
+                    with tab3:
+                        st.subheader('Polymarket持仓')
+                        positions_df = self._get_polymarket_positions()
+                        if not positions_df.empty:
+                            st.dataframe(
+                                positions_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    'Market ID': st.column_config.TextColumn('市场ID', width='small'),
+                                    'Outcome': st.column_config.TextColumn('结果', width='small'),
+                                    'Size': st.column_config.NumberColumn('数量', format='%.2f'),
+                                    'Avg Price': st.column_config.NumberColumn('平均价格', format='%.4f'),
+                                    'Current Price': st.column_config.NumberColumn('当前价格', format='%.4f'),
+                                    'PnL': st.column_config.NumberColumn('盈亏', format='%.2f')
+                                }
+                            )
+                        else:
+                            st.info('无持仓数据可用。')
+                    
+                    # Portfolio tab
+                    with tab4:
+                        st.subheader('Polymarket投资组合')
+                        portfolio = self._get_polymarket_portfolio()
+                        if portfolio:
+                            col1, col2 = st.columns(2)
+                            col1.metric('总价值', f"${portfolio.get('total_value', '0')}")
+                            col2.metric('总盈亏', f"${portfolio.get('total_pnl', '0')}")
+                            
+                            # Portfolio positions
+                            positions = portfolio.get('positions', [])
+                            if positions:
+                                st.subheader('持仓详情')
+                                positions_df = pd.DataFrame(positions)
+                                st.dataframe(
+                                    positions_df,
+                                    use_container_width=True,
+                                    hide_index=True,
+                                    column_config={
+                                        'market_id': st.column_config.TextColumn('市场ID', width='small'),
+                                        'outcome': st.column_config.TextColumn('结果', width='small'),
+                                        'value': st.column_config.NumberColumn('价值', format='%.2f'),
+                                        'pnl': st.column_config.NumberColumn('盈亏', format='%.2f')
+                                    }
+                                )
+                            
+                            # Portfolio stats
+                            stats = portfolio.get('stats', {})
+                            if stats:
+                                st.subheader('投资组合统计')
+                                col1, col2, col3, col4 = st.columns(4)
+                                col1.metric('总交易数', stats.get('total_trades', 0))
+                                col2.metric('胜率', f"{stats.get('win_rate', 0) * 100:.1f}%")
+                                col3.metric('平均盈利', f"${stats.get('avg_win', 0):.2f}")
+                                col4.metric('平均亏损', f"${stats.get('avg_loss', 0):.2f}")
+                        else:
+                            st.info('无投资组合数据可用。')
+            
             # Update last refresh time
             st.session_state.last_refresh = datetime.now()
         
@@ -417,24 +726,45 @@ class MonitoringDashboard:
             refresh_all_data()
             self.trigger_data_update()
         
-        # Add JavaScript for WebSocket client
+        # Add JavaScript for WebSocket client (Polymarket API compatible)
         st.components.v1.html('''
         <script>
-            // WebSocket client
+            // WebSocket client (Polymarket API compatible)
             const ws = new WebSocket('ws://localhost:8765');
             
             ws.onopen = function() {
                 console.log('WebSocket connected');
+                
+                // Send initial subscription message (Polymarket API format)
+                const subscriptionMessage = {
+                    type: 'USER',  // or 'MARKET' for market data
+                    markets: [],  // List of markets to subscribe to
+                    // assets_ids: [],  // List of assets to subscribe to (for MARKET channel)
+                    // auth: {  // Authentication (if required)
+                    //   token: 'your-auth-token'
+                    // }
+                };
+                
+                console.log('Sending subscription message:', subscriptionMessage);
+                ws.send(JSON.stringify(subscriptionMessage));
             };
             
             ws.onmessage = function(event) {
                 console.log('WebSocket message received:', event.data);
                 const data = JSON.parse(event.data);
                 
-                if (data.type === 'data_update') {
+                if (data.type === 'initial_data') {
+                    console.log('Received initial data:', data);
+                    // Handle initial data
+                } else if (data.type === 'data_update') {
                     // Update UI elements when data changes
                     console.log('Updating UI with new data:', data);
                     // Streamlit will handle UI updates through its own rerun mechanism
+                } else if (data.type === 'subscription_updated') {
+                    console.log('Subscription updated:', data.subscriptions);
+                    // Handle subscription updates
+                } else if (data.error) {
+                    console.error('WebSocket error:', data.error);
                 }
             };
             
@@ -446,11 +776,27 @@ class MonitoringDashboard:
                 console.error('WebSocket error:', error);
             };
             
-            // Refresh data periodically to ensure UI is up to date
-            setInterval(function() {
-                // This will trigger Streamlit to rerun and update the UI
-                console.log('Requesting UI update...');
-            }, 5000);
+            // Example: Subscribe to additional markets
+            function subscribeToMarkets(markets) {
+                if (ws.readyState === WebSocket.OPEN) {
+                    const subscribeMessage = {
+                        operation: 'subscribe',
+                        markets: markets
+                    };
+                    ws.send(JSON.stringify(subscribeMessage));
+                }
+            }
+            
+            // Example: Unsubscribe from markets
+            function unsubscribeFromMarkets(markets) {
+                if (ws.readyState === WebSocket.OPEN) {
+                    const unsubscribeMessage = {
+                        operation: 'unsubscribe',
+                        markets: markets
+                    };
+                    ws.send(JSON.stringify(unsubscribeMessage));
+                }
+            }
         </script>
         ''', height=0)
         
