@@ -9,7 +9,6 @@ from decimal import Decimal
 from core.models import Instrument
 from account.account_manager import AccountManager
 from gateways.polymarket_gateway import PolymarketGateway
-from gateways.binance_gateway import BinanceGateway
 from engine.execution_engine import ExecutionEngine
 from security.credential_manager import CredentialManager
 from dashboard.data_service import data_service
@@ -34,13 +33,7 @@ def main():
         account_config.get('initial_balances', {"USDC": 10000})
     )
     
-    # 币安账户
-    binance_account_config = config.get_account_config('binance_account')
-    acc_mgr.add_account(
-        "binance_account", 
-        binance_account_config.get('gateway', 'binance'), 
-        binance_account_config.get('initial_balances', {"USDC": 10000, "BTC": 1.0, "ETH": 10.0})
-    )
+
 
     # 从配置加载网关配置
     # Polymarket网关
@@ -53,16 +46,9 @@ def main():
     poly_gw.no_input = args.no_input
     poly_gw.connect()
     
-    # 币安网关
-    binance_config = config.get_gateway_config('binance')
-    binance_gw = BinanceGateway(
-        cred_mgr, 
-        mock=binance_config.get('mock', False)
-    )
-    binance_gw.no_input = args.no_input
-    binance_gw.connect()
 
-    engine = ExecutionEngine(acc_mgr, {"polymarket": poly_gw, "binance": binance_gw})
+
+    engine = ExecutionEngine(acc_mgr, {"polymarket": poly_gw})
     
     # 初始化仪表盘数据服务
     data_service.initialize(engine)

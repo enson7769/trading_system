@@ -1,10 +1,10 @@
 # 交易系统 (Trading System)
 
-交易系统是一个功能强大的交易平台，支持多个交易所的集成，包括Polymarket和币安。系统默认使用真实API连接，提供实时交易功能。
+交易系统是一个功能强大的交易平台，集成了Polymarket交易所。系统默认使用真实API连接，提供实时交易功能。
 
 ## 项目概述
 
-- **多交易所集成**：支持Polymarket和币安交易所的实时连接
+- **交易所集成**：支持Polymarket交易所的实时连接
 - **实时数据更新**：使用WebSocket实现实时数据推送和页面刷新
 - **智能交易策略**：内置概率策略和Polymarket专用策略
 - **市场监控**：实时监控市场流动性和大额订单
@@ -21,11 +21,7 @@
 - **账户管理**：查询持仓、交易历史和投资组合
 - **订单执行**：发送、取消和管理订单
 
-#### 币安集成
-- **账户余额查询**：实时获取账户余额
-- **充值历史**：查询充值记录
-- **提现历史**：查询提现记录
-- **提现操作**：支持数字货币提现
+
 
 ### 2. 交易引擎
 
@@ -55,8 +51,7 @@ trading_system/
 ├── engine/           # 执行引擎
 ├── gateways/         # 交易所网关
 │   ├── base.py       # 网关抽象基类
-│   ├── polymarket_gateway.py  # Polymarket网关
-│   └── binance_gateway.py     # 币安网关
+│   └── polymarket_gateway.py  # Polymarket网关
 ├── security/         # 安全相关
 ├── strategy/         # 交易策略
 │   ├── probability_strategy.py  # 概率策略
@@ -93,10 +88,7 @@ gateways:
     clob_api_url: https://clob.polymarket.com  # CLOB API端点
     data_api_url: https://data-api.polymarket.com  # Data API端点
     websocket_url: wss://ws-subscriptions-clob.polymarket.com  # WebSocket API端点
-  binance:
-    mock: false  # 默认不启用模拟模式
-    testnet: false  # 是否使用测试网络
-    base_url: https://api.binance.com  # API基础URL
+
 ```
 
 #### 账户配置
@@ -108,12 +100,7 @@ accounts:
     gateway: polymarket  # 所属网关
     initial_balances:  # 初始余额
       USDC: 10000
-  binance_account:
-    gateway: binance  # 所属网关
-    initial_balances:  # 初始余额
-      USDC: 10000
-      BTC: 1.0
-      ETH: 10.0
+
 ```
 
 ## 快速开始
@@ -129,7 +116,6 @@ pip install -r requirements.txt
 编辑 `config/config.yaml` 文件，设置您的账户信息和API密钥：
 
 - **Polymarket**：设置 `address` 和 `api_key`
-- **币安**：通过环境变量或安全方式设置API密钥
 
 ### 3. 启动系统
 

@@ -26,7 +26,7 @@ class PolymarketGateway(BaseGateway):
         
         # 使用提供的值或配置值或默认值
         if mock is None:
-            mock = gateway_config.get('mock', True)
+            mock = gateway_config.get('mock', False)
         
         self.rpc_url = rpc_url
         self.cred_mgr = credential_manager
@@ -36,22 +36,22 @@ class PolymarketGateway(BaseGateway):
         self.no_input = False
         self.mock = mock
         # 从配置加载合约地址
-        self.exchange_address = gateway_config.get('exchange_address', "0x435AB6645531D3f5391E8B8DA9c0F7b64e6C7e11")
-        self.usdc_address = gateway_config.get('usdc_address', "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
+        self.exchange_address = gateway_config.get('exchange_address')
+        self.usdc_address = gateway_config.get('usdc_address')
         
         # 从配置加载API端点
-        self.gamma_api_url = gateway_config.get('gamma_api_url', "https://gamma-api.polymarket.com")
-        self.clob_api_url = gateway_config.get('clob_api_url', "https://clob.polymarket.com")
-        self.data_api_url = gateway_config.get('data_api_url', "https://data-api.polymarket.com")
-        self.websocket_url = gateway_config.get('websocket_url', "wss://ws-subscriptions-clob.polymarket.com")
+        self.gamma_api_url = gateway_config.get('gamma_api_url')
+        self.clob_api_url = gateway_config.get('clob_api_url')
+        self.data_api_url = gateway_config.get('data_api_url')
+        self.websocket_url = gateway_config.get('websocket_url')
         
         # 从配置加载账户信息
-        self.address = gateway_config.get('address', None)
-        self.api_key = gateway_config.get('api_key', None)
+        self.address = gateway_config.get('address')
+        self.api_key = gateway_config.get('api_key')
         
         # 从配置加载API配置
-        self.api_timeout = gateway_config.get('api_timeout', 30)
-        self.api_retries = gateway_config.get('api_retries', 3)
+        self.api_timeout = gateway_config.get('api_timeout')
+        self.api_retries = gateway_config.get('api_retries')
 
     def connect(self):
         """连接到Polymarket"""
@@ -134,19 +134,59 @@ class PolymarketGateway(BaseGateway):
             list: 事件列表
         """
         if self.mock:
-            # 模拟数据
+            # 模拟Polymarket真实API返回数据
             return [
                 {
-                    "id": "event1",
-                    "title": "Fed Meeting Outcome",
-                    "description": "Federal Reserve meeting outcome",
-                    "categories": ["finance", "us"]
+                    "id": "0x4e3a3754419731981c474b4a7b68c6c7d3a2e1f0",
+                    "title": "2026 U.S. Presidential Election",
+                    "description": "Who will win the 2026 U.S. presidential election?",
+                    "categories": ["politics", "us", "election"],
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-02-05T12:00:00Z",
+                    "image_url": "https://polymarket.com/images/events/2026-election.jpg",
+                    "cover_image_url": "https://polymarket.com/images/events/2026-election-cover.jpg",
+                    "featured": true,
+                    "resolved_at": null
                 },
                 {
-                    "id": "event2",
-                    "title": "CPI Data Release",
-                    "description": "Consumer Price Index data release",
-                    "categories": ["finance", "us", "inflation"]
+                    "id": "0x5b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+                    "title": "Federal Reserve Interest Rate Decision",
+                    "description": "Will the Federal Reserve raise interest rates at the March 2026 meeting?",
+                    "categories": ["finance", "us", "fed", "interest-rates"],
+                    "status": "active",
+                    "created_at": "2026-02-01T00:00:00Z",
+                    "updated_at": "2026-02-05T10:00:00Z",
+                    "image_url": "https://polymarket.com/images/events/fed-meeting.jpg",
+                    "cover_image_url": "https://polymarket.com/images/events/fed-meeting-cover.jpg",
+                    "featured": true,
+                    "resolved_at": null
+                },
+                {
+                    "id": "0x6c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d",
+                    "title": "Bitcoin Price Prediction",
+                    "description": "Will Bitcoin price exceed $100,000 by the end of 2026?",
+                    "categories": ["crypto", "bitcoin", "price-prediction"],
+                    "status": "active",
+                    "created_at": "2026-01-15T00:00:00Z",
+                    "updated_at": "2026-02-05T09:00:00Z",
+                    "image_url": "https://polymarket.com/images/events/bitcoin-price.jpg",
+                    "cover_image_url": "https://polymarket.com/images/events/bitcoin-price-cover.jpg",
+                    "featured": false,
+                    "resolved_at": null
+                },
+                {
+                    "id": "0x7d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e",
+                    "title": "U.S. Inflation Rate",
+                    "description": "Will the U.S. inflation rate be above 3% in Q1 2026?",
+                    "categories": ["finance", "us", "inflation"],
+                    "status": "active",
+                    "created_at": "2026-01-20T00:00:00Z",
+                    "updated_at": "2026-02-05T08:00:00Z",
+                    "image_url": "https://polymarket.com/images/events/inflation.jpg",
+                    "cover_image_url": "https://polymarket.com/images/events/inflation-cover.jpg",
+                    "featured": false,
+                    "resolved_at": null
                 }
             ]
         

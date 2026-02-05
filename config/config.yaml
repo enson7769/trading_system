@@ -32,10 +32,6 @@ gateways:
     # API配置
     api_timeout: 30  # API请求超时时间（秒）
     api_retries: 3  # API请求重试次数
-  binance:
-    mock: false  # 是否启用模拟模式
-    testnet: false  # 是否使用测试网络
-    base_url: https://api.binance.com  # API基础URL
 
 # 账户配置
 accounts:
@@ -43,12 +39,6 @@ accounts:
     gateway: polymarket  # 所属网关
     initial_balances:  # 初始余额
       USDC: 10000
-  binance_account:
-    gateway: binance  # 所属网关
-    initial_balances:  # 初始余额
-      USDC: 10000
-      BTC: 1.0
-      ETH: 10.0
 
 # 流动性配置
 liquidity:

@@ -90,13 +90,12 @@ class Config:
                 print(f"加载配置文件错误: {e}")
                 # 如果文件加载失败，使用空配置
         
-        # 从文件配置创建基础配置
-        base_config = {}
-        self._merge_config(base_config, file_config)
+        # 从默认配置创建基础配置
+        base_config = default_config.copy()
         
-        # 将默认配置（含环境变量）合并到基础配置
-        # 这样环境变量会覆盖文件配置，具有更高优先级
-        self._merge_config(base_config, default_config)
+        # 将文件配置合并到基础配置
+        # 这样文件配置会覆盖默认配置，具有更高优先级
+        self._merge_config(base_config, file_config)
         
         return base_config
     
