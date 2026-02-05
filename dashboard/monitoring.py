@@ -51,6 +51,19 @@ class MonitoringDashboard:
         self.system_status_page = SystemStatusPage(self)
         self.polymarket_data_page = PolymarketDataPage(self)
     
+    def get_order_stats(self) -> Dict[str, Any]:
+        """Get order statistics from backend"""
+        if data_service.is_initialized():
+            return data_service.get_order_stats()
+        else:
+            return {
+                'total_orders': 0,
+                'filled_orders': 0,
+                'pending_orders': 0,
+                'rejected_orders': 0,
+                'total_size': 0
+            }
+    
     def _get_order_data(self, page: int = 1, page_size: int = 100) -> pd.DataFrame:
         """Get order data from backend with pagination"""
         if not data_service.is_initialized():
