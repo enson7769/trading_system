@@ -339,11 +339,76 @@ class MonitoringDashboard:
             markets = self.polymarket_gateway.get_markets(event_id)
             market_data = []
             for market in markets:
+                market_id = market.get('id', '')
+                # 处理结果选项，确保正确显示
+                outcomes = market.get('outcomes', [])
+                
+                # 获取市场价格
+                last_price = None
+                try:
+                    price_data = self.polymarket_gateway.get_market_price(market_id)
+                    last_price_str = price_data.get('last_price', '0')
+                    last_price = float(last_price_str)
+                    logger.info(f"获取市场 {market_id} 价格成功: {last_price}")
+                except Exception as e:
+                    logger.error(f"获取市场 {market_id} 价格失败: {e}")
+                
+                if isinstance(outcomes, list):
+                    if len(outcomes) == 2:
+                        # 二元市场，计算每个结果的赢率
+                        outcome1 = outcomes[0]
+                        outcome2 = outcomes[1]
+                        if last_price is not None:
+                            # 即使价格为0，也显示赢率百分比
+                            percentage1 = round(last_price * 100, 2)
+                            percentage2 = round((1 - last_price) * 100, 2)
+                            formatted_outcomes = f"{outcome1} ({percentage1}%), {outcome2} ({percentage2}%)"
+                        else:
+                            # 无法获取价格，仅显示结果选项
+                            formatted_outcomes = ', '.join(outcomes)
+                    else:
+                        # 多元市场，仅显示结果选项
+                        formatted_outcomes = ', '.join(outcomes)
+                elif isinstance(outcomes, str):
+                    # 如果是字符串，尝试解析为列表
+                    try:
+                        # 尝试去除可能的括号和引号，然后分割
+                        cleaned_outcomes = outcomes.strip('[]')
+                        # 处理带引号的情况
+                        if '"' in cleaned_outcomes:
+                            # 分割并去除引号和空格
+                            items = [item.strip('" ')
+                                   for item in cleaned_outcomes.split(',')
+                                   if item.strip('" ')]
+                        else:
+                            # 直接分割
+                            items = [item.strip() for item in cleaned_outcomes.split(',') if item.strip()]
+                        
+                        if len(items) == 2:
+                            # 二元市场，计算每个结果的赢率
+                            if last_price is not None:
+                                # 即使价格为0，也显示赢率百分比
+                                percentage1 = round(last_price * 100, 2)
+                                percentage2 = round((1 - last_price) * 100, 2)
+                                formatted_outcomes = f"{items[0]} ({percentage1}%), {items[1]} ({percentage2}%)"
+                            else:
+                                # 无法获取价格，仅显示结果选项
+                                formatted_outcomes = ', '.join(items)
+                        else:
+                            # 多元市场，仅显示结果选项
+                            formatted_outcomes = ', '.join(items)
+                    except Exception:
+                        # 如果解析失败，使用原始字符串
+                        formatted_outcomes = outcomes
+                else:
+                    # 其他类型，转换为字符串
+                    formatted_outcomes = str(outcomes)
+                
                 market_data.append({
-                    'Market ID': market.get('id', ''),
+                    'Market ID': market_id,
                     'Event ID': market.get('event_id', ''),
                     'Question': market.get('question', ''),
-                    'Outcomes': ', '.join(market.get('outcomes', [])),
+                    'Outcomes': formatted_outcomes,
                     'Status': market.get('status', '')
                 })
             return pd.DataFrame(market_data)
