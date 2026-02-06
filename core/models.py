@@ -26,6 +26,7 @@ class Order:
     filled_qty: Decimal = field(default_factory=lambda: Decimal('0'))  # 已成交数量
     gateway_order_id: Optional[str] = None  # 网关订单ID
     account_id: Optional[str] = None  # 账户ID
+    outcome: Optional[str] = None  # 结果选项（Polymarket特有）
 
 @dataclass
 class Position:

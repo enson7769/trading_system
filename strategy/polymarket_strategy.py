@@ -170,11 +170,12 @@ class PolymarketStrategy:
                 'error': str(e)
             }
     
-    def generate_trade_signal(self, market_id: str) -> Dict[str, Any]:
+    def generate_trade_signal(self, market_id: str, outcome: Optional[str] = None) -> Dict[str, Any]:
         """生成交易信号
         
         Args:
             market_id: 市场ID
+            outcome: 结果选项（可选）
             
         Returns:
             dict: 交易信号
@@ -187,6 +188,7 @@ class PolymarketStrategy:
             if 'error' in market_analysis:
                 return {
                     'market_id': market_id,
+                    'outcome': outcome,
                     'signal': 'HOLD',
                     'confidence': 'LOW',
                     'reason': f"市场分析失败: {market_analysis['error']}",
@@ -207,6 +209,7 @@ class PolymarketStrategy:
             if liquidity_score == 'LOW':
                 return {
                     'market_id': market_id,
+                    'outcome': outcome,
                     'signal': 'HOLD',
                     'confidence': 'LOW',
                     'reason': '市场流动性不足',
@@ -218,6 +221,7 @@ class PolymarketStrategy:
                 # 存在套利机会
                 return {
                     'market_id': market_id,
+                    'outcome': outcome,
                     'signal': 'ARBITRAGE',
                     'confidence': 'HIGH',
                     'reason': f'价差过大: {spread}',
@@ -229,6 +233,7 @@ class PolymarketStrategy:
                 # 无明显套利机会
                 return {
                     'market_id': market_id,
+                    'outcome': outcome,
                     'signal': 'HOLD',
                     'confidence': 'MEDIUM',
                     'reason': '价差在合理范围内',
@@ -238,27 +243,63 @@ class PolymarketStrategy:
             logger.error(f"生成交易信号失败: {e}")
             return {
                 'market_id': market_id,
+                'outcome': outcome,
                 'signal': 'HOLD',
                 'confidence': 'LOW',
                 'reason': f"生成信号失败: {str(e)}"
             }
     
-    def get_trade_recommendation(self, market_id: str) -> Dict[str, Any]:
+    def generate_trade_signals_for_all_outcomes(self, market_id: str) -> List[Dict[str, Any]]:
+        """为市场的所有结果选项生成交易信号
+        
+        Args:
+            market_id: 市场ID
+            
+        Returns:
+            list: 交易信号列表
+        """
+        try:
+            # 获取市场详情
+            market_info = self.gateway.get_market(market_id)
+            outcomes = market_info.get('outcomes', [])
+            
+            if not outcomes:
+                logger.warning(f"市场 {market_id} 没有结果选项")
+                return []
+            
+            # 为每个结果选项生成交易信号
+            signals = []
+            for outcome in outcomes:
+                signal = self.generate_trade_signal(market_id, outcome)
+                signals.append(signal)
+            
+            return signals
+        except Exception as e:
+            logger.error(f"为所有结果选项生成交易信号失败: {e}")
+            return []
+    
+    def get_trade_recommendation(self, market_id: str, outcome: Optional[str] = None) -> Dict[str, Any]:
         """获取交易建议
         
         Args:
             market_id: 市场ID
+            outcome: 结果选项（可选）
             
         Returns:
             dict: 交易建议
         """
         try:
             # 生成交易信号
-            signal = self.generate_trade_signal(market_id)
+            signal = self.generate_trade_signal(market_id, outcome)
             
             # 获取持仓信息
             positions = self.gateway.get_positions()
-            market_position = next((p for p in positions if p.get('market_id') == market_id), None)
+            if outcome:
+                # 查找特定结果选项的持仓
+                market_position = next((p for p in positions if p.get('market_id') == market_id and p.get('outcome') == outcome), None)
+            else:
+                # 查找市场的任何持仓
+                market_position = next((p for p in positions if p.get('market_id') == market_id), None)
             
             # 计算建议订单大小
             order_size = self._calculate_order_size(market_position)
@@ -276,10 +317,40 @@ class PolymarketStrategy:
             logger.error(f"获取交易建议失败: {e}")
             return {
                 'market_id': market_id,
+                'outcome': outcome,
                 'signal': 'HOLD',
                 'confidence': 'LOW',
                 'reason': f"获取建议失败: {str(e)}"
             }
+    
+    def get_trade_recommendations_for_all_outcomes(self, market_id: str) -> List[Dict[str, Any]]:
+        """为市场的所有结果选项获取交易建议
+        
+        Args:
+            market_id: 市场ID
+            
+        Returns:
+            list: 交易建议列表
+        """
+        try:
+            # 获取市场详情
+            market_info = self.gateway.get_market(market_id)
+            outcomes = market_info.get('outcomes', [])
+            
+            if not outcomes:
+                logger.warning(f"市场 {market_id} 没有结果选项")
+                return []
+            
+            # 为每个结果选项获取交易建议
+            recommendations = []
+            for outcome in outcomes:
+                recommendation = self.get_trade_recommendation(market_id, outcome)
+                recommendations.append(recommendation)
+            
+            return recommendations
+        except Exception as e:
+            logger.error(f"为所有结果选项获取交易建议失败: {e}")
+            return []
     
     def _calculate_order_size(self, position: Optional[Dict[str, Any]]) -> Decimal:
         """计算订单大小
@@ -342,6 +413,66 @@ class PolymarketStrategy:
                 })
         
         return results
+    
+    def get_m_choose_n_trade_recommendations(self, market_id: str, n: int) -> List[Dict[str, Any]]:
+        """获取M选N个结果交易的交易建议
+        
+        Args:
+            market_id: 市场ID
+            n: 要选择的结果选项数量
+            
+        Returns:
+            list: 交易建议列表
+        """
+        try:
+            # 获取市场详情
+            market_info = self.gateway.get_market(market_id)
+            outcomes = market_info.get('outcomes', [])
+            m = len(outcomes)
+            
+            if n > m:
+                logger.error(f"N={n} 大于结果选项总数 M={m}")
+                return []
+            
+            if n <= 0:
+                logger.error(f"N={n} 必须大于0")
+                return []
+            
+            logger.info(f"市场 {market_id} 有 {m} 个结果选项，将选择 {n} 个进行交易")
+            
+            # 为所有结果选项获取交易建议
+            all_recommendations = self.get_trade_recommendations_for_all_outcomes(market_id)
+            
+            # 过滤出有效的交易建议（信号不是HOLD）
+            valid_recommendations = []
+            for rec in all_recommendations:
+                if rec.get('signal') != 'HOLD':
+                    valid_recommendations.append(rec)
+            
+            logger.info(f"有效交易建议数: {len(valid_recommendations)}")
+            
+            # 定义置信度权重
+            confidence_weights = {
+                'HIGH': 3,
+                'MEDIUM': 2,
+                'LOW': 1
+            }
+            
+            # 按置信度排序
+            valid_recommendations.sort(key=lambda x: confidence_weights.get(x.get('confidence', 'LOW'), 0), reverse=True)
+            
+            # 选择前N个最佳的交易建议
+            if len(valid_recommendations) > n:
+                selected_recommendations = valid_recommendations[:n]
+                logger.info(f"从 {len(valid_recommendations)} 个有效交易建议中选择了 {n} 个最佳的")
+            else:
+                selected_recommendations = valid_recommendations
+                logger.info(f"有效交易建议数不足，仅选择了 {len(selected_recommendations)} 个")
+            
+            return selected_recommendations
+        except Exception as e:
+            logger.error(f"获取M选N个结果交易的交易建议失败: {e}")
+            return []
     
     def handle_event_trigger(self, event_name: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """处理事件触发的下单

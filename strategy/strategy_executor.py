@@ -150,19 +150,142 @@ class StrategyExecutor:
         try:
             # 运行策略获取交易建议
             start_time = time.time()
-            recommendations = self.polymarket_strategy.run_strategy(self.monitored_markets)
+            
+            # 为每个市场的所有结果选项获取交易建议
+            all_recommendations = []
+            for market_id in self.monitored_markets:
+                try:
+                    # 为所有结果选项获取建议
+                    market_recommendations = self.polymarket_strategy.get_trade_recommendations_for_all_outcomes(market_id)
+                    all_recommendations.extend(market_recommendations)
+                except Exception as e:
+                    logger.error(f"获取市场 {market_id} 的交易建议失败: {e}")
+            
             execution_time = time.time() - start_time
             
-            logger.info(f"策略运行完成，耗时: {execution_time:.2f}秒，获取交易建议数: {len(recommendations)}")
+            logger.info(f"策略运行完成，耗时: {execution_time:.2f}秒，获取交易建议数: {len(all_recommendations)}")
             
             # 处理交易建议
-            self._process_recommendations(recommendations)
+            self._process_recommendations(all_recommendations)
             
             logger.info("策略执行完成")
         except Exception as e:
             logger.error(f"策略执行失败: {e}")
             import traceback
             traceback.print_exc()
+    
+    def execute_m_choose_n_strategy(self, market_id: str, n: int) -> Dict[str, Any]:
+        """执行M选N个结果交易策略
+        
+        Args:
+            market_id: 市场ID
+            n: 要选择的结果选项数量
+            
+        Returns:
+            dict: 策略执行结果
+        """
+        logger.info(f"开始执行M选N个结果交易策略: 市场={market_id}, N={n}")
+        
+        try:
+            # 获取市场的所有结果选项
+            market_info = self.polymarket_gateway.get_market(market_id)
+            if not market_info:
+                logger.error(f"获取市场信息失败: {market_id}")
+                return {
+                    'status': 'error',
+                    'message': f'获取市场信息失败: {market_id}'
+                }
+            
+            outcomes = market_info.get('outcomes', [])
+            m = len(outcomes)
+            
+            if n > m:
+                logger.error(f"N={n} 大于结果选项总数 M={m}")
+                return {
+                    'status': 'error',
+                    'message': f'N={n} 大于结果选项总数 M={m}'
+                }
+            
+            if n <= 0:
+                logger.error(f"N={n} 必须大于0")
+                return {
+                    'status': 'error',
+                    'message': f'N={n} 必须大于0'
+                }
+            
+            logger.info(f"市场 {market_id} 有 {m} 个结果选项，将选择 {n} 个进行交易")
+            
+            # 为市场的所有结果选项获取交易建议
+            start_time = time.time()
+            market_recommendations = self.polymarket_strategy.get_trade_recommendations_for_all_outcomes(market_id)
+            execution_time = time.time() - start_time
+            
+            logger.info(f"获取交易建议完成，耗时: {execution_time:.2f}秒，获取交易建议数: {len(market_recommendations)}")
+            
+            # 过滤出有效的交易建议
+            valid_recommendations = []
+            for rec in market_recommendations:
+                if self._is_valid_recommendation(rec):
+                    valid_recommendations.append(rec)
+            
+            logger.info(f"有效交易建议数: {len(valid_recommendations)}")
+            
+            # 按置信度排序，选择前N个最佳的交易建议
+            if len(valid_recommendations) > n:
+                # 按置信度排序
+                valid_recommendations.sort(key=lambda x: self.confidence_levels.get(x.get('confidence', 'LOW'), 0), reverse=True)
+                # 选择前N个
+                selected_recommendations = valid_recommendations[:n]
+                logger.info(f"从 {len(valid_recommendations)} 个有效交易建议中选择了 {n} 个最佳的")
+            else:
+                selected_recommendations = valid_recommendations
+                logger.info(f"有效交易建议数不足，仅选择了 {len(selected_recommendations)} 个")
+            
+            # 提交订单
+            if selected_recommendations:
+                orders = []
+                for i, rec in enumerate(selected_recommendations):
+                    try:
+                        logger.debug(f"处理交易建议 {i+1}/{len(selected_recommendations)}: {rec.get('market_id')}, 信号: {rec.get('signal')}, 置信度: {rec.get('confidence')}, 结果选项: {rec.get('outcome')}")
+                        order = self._create_order(rec)
+                        if order:
+                            orders.append((order, None))  # 暂时不提供市场概率数据
+                            logger.info(f"已创建订单: {order.order_id}, 市场: {rec.get('market_id')}, 结果选项: {rec.get('outcome')}, 方向: {order.side}, 数量: {order.quantity}")
+                        else:
+                            logger.warning(f"创建订单失败，交易建议无效: {rec.get('market_id')}")
+                    except Exception as e:
+                        logger.error(f"创建订单失败 (市场: {rec.get('market_id')}): {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # 批量提交订单
+                if orders:
+                    logger.info(f"准备提交 {len(orders)} 个订单")
+                    start_time = time.time()
+                    result = self.execution_engine.submit_orders_batch(orders)
+                    execution_time = time.time() - start_time
+                    logger.info(f"订单提交完成，耗时: {execution_time:.2f}秒，结果: {result}")
+                else:
+                    logger.info("没有有效的订单需要提交")
+            else:
+                logger.info("没有有效的交易建议")
+            
+            return {
+                'status': 'success',
+                'market_id': market_id,
+                'm': m,
+                'n': n,
+                'selected_count': len(selected_recommendations),
+                'selected_outcomes': [rec.get('outcome') for rec in selected_recommendations]
+            }
+        except Exception as e:
+            logger.error(f"执行M选N个结果交易策略失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'status': 'error',
+                'message': str(e)
+            }
     
     def _process_recommendations(self, recommendations: List[Dict[str, Any]]):
         """处理交易建议
@@ -286,12 +409,13 @@ class StrategyExecutor:
             market_id = recommendation.get('market_id')
             signal = recommendation.get('signal')
             order_size = recommendation.get('order_size', Decimal('0'))
+            outcome = recommendation.get('outcome')
             
             if not market_id:
                 logger.error("创建订单失败: 缺少市场ID")
                 return None
             
-            logger.debug(f"开始创建订单: 市场ID={market_id}, 信号={signal}, 订单大小={order_size}")
+            logger.debug(f"开始创建订单: 市场ID={market_id}, 结果选项={outcome}, 信号={signal}, 订单大小={order_size}")
             
             # 获取市场信息
             try:
@@ -323,18 +447,21 @@ class StrategyExecutor:
             try:
                 instrument = Instrument(
                     symbol=market_id,
-                    name=market_info.get('question', market_id),
-                    gateway_name='polymarket',
-                    precision=2
+                    base_asset='OUTCOME',
+                    quote_asset='USDC',
+                    min_order_size=Decimal('1'),
+                    tick_size=Decimal('0.01'),
+                    gateway_name='polymarket'
                 )
-                logger.debug(f"创建交易品种成功: {instrument.name}")
+                logger.debug(f"创建交易品种成功: {instrument.symbol}")
             except Exception as e:
                 logger.error(f"创建交易品种失败: {e}")
                 return None
             
             # 创建订单
             try:
-                order_id = f"auto_{int(time.time())}_{market_id[:8]}"
+                # 为每个结果选项创建唯一的订单ID
+                order_id = f"auto_{int(time.time())}_{market_id[:8]}_{outcome[:4] if outcome else 'none'}"
                 order = Order(
                     order_id=order_id,
                     instrument=instrument,
@@ -343,10 +470,11 @@ class StrategyExecutor:
                     quantity=order_size,
                     price=None,  # 市价单不需要价格
                     account_id='main_account',
+                    outcome=outcome,
                     timestamp=datetime.now().isoformat()
                 )
                 
-                logger.info(f"创建订单成功: {order.order_id}, 市场: {market_id}, 方向: {side}, 数量: {order_size}")
+                logger.info(f"创建订单成功: {order.order_id}, 市场: {market_id}, 结果选项: {outcome}, 方向: {side}, 数量: {order_size}")
                 return order
             except Exception as e:
                 logger.error(f"创建订单对象失败: {e}")
@@ -575,12 +703,13 @@ class StrategyExecutor:
         """
         try:
             signal_type = signal.get('signal')
+            outcome = signal.get('outcome')
             
             if not market_id:
                 logger.error("创建订单失败: 缺少市场ID")
                 return None
             
-            logger.debug(f"开始为事件创建订单: 市场ID={market_id}, 信号={signal_type}, 订单大小={order_size}")
+            logger.debug(f"开始为事件创建订单: 市场ID={market_id}, 结果选项={outcome}, 信号={signal_type}, 订单大小={order_size}")
             
             # 获取市场信息
             try:
@@ -612,18 +741,21 @@ class StrategyExecutor:
             try:
                 instrument = Instrument(
                     symbol=market_id,
-                    name=market_info.get('question', market_id),
-                    gateway_name='polymarket',
-                    precision=2
+                    base_asset='OUTCOME',
+                    quote_asset='USDC',
+                    min_order_size=Decimal('1'),
+                    tick_size=Decimal('0.01'),
+                    gateway_name='polymarket'
                 )
-                logger.debug(f"创建交易品种成功: {instrument.name}")
+                logger.debug(f"创建交易品种成功: {instrument.symbol}")
             except Exception as e:
                 logger.error(f"创建交易品种失败: {e}")
                 return None
             
             # 创建订单
             try:
-                order_id = f"event_{int(time.time())}_{market_id[:8]}"
+                # 为每个结果选项创建唯一的订单ID
+                order_id = f"event_{int(time.time())}_{market_id[:8]}_{outcome[:4] if outcome else 'none'}"
                 order = Order(
                     order_id=order_id,
                     instrument=instrument,
@@ -632,10 +764,11 @@ class StrategyExecutor:
                     quantity=order_size,
                     price=None,  # 市价单不需要价格
                     account_id='main_account',
+                    outcome=outcome,
                     timestamp=datetime.now().isoformat()
                 )
                 
-                logger.info(f"为事件创建订单成功: {order.order_id}, 市场: {market_id}, 方向: {side}, 数量: {order_size}")
+                logger.info(f"为事件创建订单成功: {order.order_id}, 市场: {market_id}, 结果选项: {outcome}, 方向: {side}, 数量: {order_size}")
                 return order
             except Exception as e:
                 logger.error(f"创建订单对象失败: {e}")

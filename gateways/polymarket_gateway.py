@@ -112,12 +112,12 @@ class PolymarketGateway(BaseGateway):
         if self.mock:
             # 模拟交易
             tx_hash = self._simulate_trade(order)
-            logger.info(f"[MOCK] 已模拟Polymarket订单: {tx_hash}")
+            logger.info(f"[MOCK] 已模拟Polymarket订单: {tx_hash}, 市场: {order.instrument.symbol}, 结果选项: {order.outcome}")
             return tx_hash
         
         # 实际交易实现（待完成）
         # 这里将使用CLOB API发送订单
-        logger.info(f"发送订单到Polymarket: {order.order_id}")
+        logger.info(f"发送订单到Polymarket: {order.order_id}, 市场: {order.instrument.symbol}, 结果选项: {order.outcome}")
         # 临时返回模拟交易哈希
         return self._simulate_trade(order)
 
