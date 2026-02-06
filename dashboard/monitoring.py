@@ -19,10 +19,19 @@ from utils.logger import logger
 from gateways.polymarket_gateway import PolymarketGateway
 from security.credential_manager import CredentialManager
 from config.config import config
+from database.database_manager import db_manager
 
 class MonitoringDashboard:
     def __init__(self):
         """Initialize monitoring dashboard"""
+        # Initialize database
+        try:
+            db_manager.connect()
+            db_manager.initialize_database()
+            logger.info("Database initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+        
         # Initialize Polymarket Gateway
         try:
             polymarket_config = config.get_gateway_config('polymarket')

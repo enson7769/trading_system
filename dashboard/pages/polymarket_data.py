@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from database.database_manager import db_manager
 
 class PolymarketDataPage:
     def __init__(self, dashboard):
@@ -64,6 +65,34 @@ class PolymarketDataPage:
             )
             st.info('无事件数据可用。')
     
+    def _get_selected_outcomes(self, market_id):
+        """从数据库中读取选中的结果选项"""
+        try:
+            query = "SELECT outcome FROM selected_outcomes WHERE market_id = %s AND is_selected = TRUE"
+            result = db_manager.execute_query(query, (market_id,))
+            if result:
+                return [row['outcome'] for row in result]
+        except Exception as e:
+            st.error(f"读取选中的结果选项失败: {e}")
+        return []
+    
+    def _save_selected_outcomes(self, market_id, selected_outcomes):
+        """保存选中的结果选项到数据库"""
+        try:
+            # 首先删除该市场的所有选中记录
+            delete_query = "DELETE FROM selected_outcomes WHERE market_id = %s"
+            db_manager.execute_update(delete_query, (market_id,))
+            
+            # 然后插入新的选中记录
+            if selected_outcomes:
+                insert_query = "INSERT INTO selected_outcomes (market_id, outcome, is_selected) VALUES (%s, %s, TRUE)"
+                for outcome in selected_outcomes:
+                    db_manager.execute_update(insert_query, (market_id, outcome))
+            return True
+        except Exception as e:
+            st.error(f"保存选中的结果选项失败: {e}")
+            return False
+    
     def _render_markets_tab(self):
         """Render Polymarket markets tab"""
         st.subheader('Polymarket市场')
@@ -80,18 +109,55 @@ class PolymarketDataPage:
         if not markets_df.empty:
             # 根据输入的数量过滤市场数据
             filtered_markets_df = markets_df.head(market_count)
-            st.dataframe(
-                filtered_markets_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    'Market ID': st.column_config.TextColumn('市场ID', width='small'),
-                    'Event ID': st.column_config.TextColumn('事件ID', width='small'),
-                    'Question': st.column_config.TextColumn('问题', width='medium'),
-                    'Outcomes': st.column_config.TextColumn('结果选项', width='medium'),
-                    'Status': st.column_config.TextColumn('状态', width='small')
-                }
-            )
+            
+            # 为每个市场显示结果选项的多选框
+            for index, row in filtered_markets_df.iterrows():
+                market_id = row['Market ID']
+                event_id = row['Event ID']
+                question = row['Question']
+                outcomes_str = row['Outcomes']
+                status = row['Status']
+                
+                # 解析结果选项
+                outcomes = []
+                if outcomes_str:
+                    # 解析类似 "Yes (0.0%), No (100.0%)" 的字符串
+                    outcome_parts = outcomes_str.split(', ')
+                    for part in outcome_parts:
+                        # 提取结果选项名称（去掉括号和概率）
+                        outcome_name = part.split(' (')[0]
+                        outcomes.append(outcome_name)
+                
+                # 创建市场展开器
+                with st.expander(f"{question} (市场ID: {market_id})"):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.write(f"**事件ID:** {event_id}")
+                        st.write(f"**状态:** {status}")
+                    with col2:
+                        st.write(f"**市场ID:** {market_id}")
+                    
+                    # 结果选项多选框
+                    st.write("**结果选项:**")
+                    selected_outcomes = []
+                    
+                    # 从数据库中读取之前选中的结果选项
+                    previous_selected = self._get_selected_outcomes(market_id)
+                    
+                    for outcome in outcomes:
+                        # 检查结果选项是否在之前选中的列表中
+                        is_selected = outcome in previous_selected
+                        # 创建复选框
+                        if st.checkbox(outcome, value=is_selected, key=f"{market_id}_{outcome}"):
+                            selected_outcomes.append(outcome)
+                    
+                    # 保存选中的结果选项到数据库
+                    if st.button(f"保存选中的结果选项", key=f"save_{market_id}"):
+                        if self._save_selected_outcomes(market_id, selected_outcomes):
+                            st.success(f"已保存市场 {market_id} 的选中结果选项: {', '.join(selected_outcomes) if selected_outcomes else '无'}")
+                        else:
+                            st.error("保存选中的结果选项失败")
+            
             # 显示过滤信息
             st.caption(f'显示前 {len(filtered_markets_df)} 个市场，共 {len(markets_df)} 个市场')
         else:

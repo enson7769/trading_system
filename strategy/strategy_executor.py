@@ -7,6 +7,7 @@ from strategy.polymarket_strategy import PolymarketStrategy
 from engine.execution_engine import ExecutionEngine
 from core.models import Order, Instrument
 from gateways.polymarket_gateway import PolymarketGateway
+from database.database_manager import db_manager
 import threading
 import time
 import asyncio
@@ -143,6 +144,17 @@ class StrategyExecutor:
                     break
                 time.sleep(1)
     
+    def _get_selected_outcomes(self, market_id):
+        """从数据库中读取选中的结果选项"""
+        try:
+            query = "SELECT outcome FROM selected_outcomes WHERE market_id = %s AND is_selected = TRUE"
+            result = db_manager.execute_query(query, (market_id,))
+            if result:
+                return [row['outcome'] for row in result]
+        except Exception as e:
+            logger.error(f"读取选中的结果选项失败: {e}")
+        return []
+    
     def _execute_strategy(self):
         """执行策略"""
         logger.info(f"开始执行策略，监控市场数: {len(self.monitored_markets)}")
@@ -151,13 +163,24 @@ class StrategyExecutor:
             # 运行策略获取交易建议
             start_time = time.time()
             
-            # 为每个市场的所有结果选项获取交易建议
+            # 为每个市场的选中结果选项获取交易建议
             all_recommendations = []
             for market_id in self.monitored_markets:
                 try:
-                    # 为所有结果选项获取建议
-                    market_recommendations = self.polymarket_strategy.get_trade_recommendations_for_all_outcomes(market_id)
-                    all_recommendations.extend(market_recommendations)
+                    # 从数据库中读取选中的结果选项
+                    selected_outcomes = self._get_selected_outcomes(market_id)
+                    
+                    if selected_outcomes:
+                        logger.info(f"市场 {market_id} 有 {len(selected_outcomes)} 个选中的结果选项")
+                        # 为每个选中的结果选项获取建议
+                        for outcome in selected_outcomes:
+                            try:
+                                recommendation = self.polymarket_strategy.get_trade_recommendation(market_id, outcome)
+                                all_recommendations.append(recommendation)
+                            except Exception as e:
+                                logger.error(f"获取市场 {market_id} 结果选项 {outcome} 的交易建议失败: {e}")
+                    else:
+                        logger.info(f"市场 {market_id} 没有选中的结果选项，跳过")
                 except Exception as e:
                     logger.error(f"获取市场 {market_id} 的交易建议失败: {e}")
             
