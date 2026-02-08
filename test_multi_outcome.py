@@ -22,7 +22,6 @@ polymarket_gateway = PolymarketGateway(
     credential_manager=None,  # 不使用实际凭证
     mock=True  # 启用模拟模式
 )
-
 # 创建Polymarket策略
 polymarket_strategy = PolymarketStrategy(polymarket_gateway)
 
