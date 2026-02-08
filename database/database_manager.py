@@ -26,7 +26,7 @@ class DatabaseManager:
             'host': db_config.get('host', 'localhost'),
             'port': db_config.get('port', '3306'),
             'user': db_config.get('user', 'root'),
-            'password': db_config.get('password', ''),
+            'password': db_config.get('password', '123456'),
             'database': db_config.get('database', 'trading_system')
         }
     
@@ -172,6 +172,45 @@ class DatabaseManager:
             return result['id'] if result else 0
         except Error as e:
             logger.error(f"获取最后插入ID错误: {e}")
+            return 0
+    
+    def execute_batch(self, query: str, params_list: List[Tuple]) -> int:
+        """批量执行INSERT、UPDATE或DELETE查询
+        
+        Args:
+            query: SQL查询语句
+            params_list: 参数列表
+            
+        Returns:
+            int: 影响的行数
+        """
+        try:
+            if not self.connection or not self.connection.is_connected():
+                if not self.connect():
+                    return 0
+            
+            # 关闭自动提交
+            self.connection.autocommit = False
+            
+            affected_rows = 0
+            for params in params_list:
+                self.cursor.execute(query, params)
+                affected_rows += self.cursor.rowcount
+            
+            # 批量提交
+            self.connection.commit()
+            
+            # 恢复自动提交
+            self.connection.autocommit = True
+            
+            return affected_rows
+        except Error as e:
+            logger.error(f"批量执行错误: {e}")
+            logger.error(f"查询: {query}")
+            if self.connection:
+                self.connection.rollback()
+                # 恢复自动提交
+                self.connection.autocommit = True
             return 0
     
     def is_connected(self) -> bool:

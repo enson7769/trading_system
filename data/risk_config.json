@@ -1,0 +1,9 @@
+{
+  "max_order_size": 1000,
+  "daily_trade_limit": 10000,
+  "max_market_exposure": 5000,
+  "price_deviation_threshold": 0.05,
+  "max_trades_per_minute": 10,
+  "stop_loss_percent": 0.05,
+  "max_position_size": 10000
+}

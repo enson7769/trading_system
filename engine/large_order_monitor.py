@@ -5,6 +5,7 @@ import json
 import os
 import concurrent.futures
 from config.config import config
+from persistence.data_store import data_store
 from utils.logger import logger
 
 class LargeOrderMonitor:
@@ -128,11 +129,8 @@ class LargeOrderMonitor:
                     self._order_index[symbol] = []
                 self._order_index[symbol].append(filename)
             
-            # 保存到数据库
+            # 保存到数据存储
             try:
-                # 延迟导入以避免循环导入
-                from dashboard.data_service import data_service
-                
                 db_order_data = {
                     'order_id': order.get('order_id'),
                     'account_id': order.get('account_id'),
@@ -142,10 +140,13 @@ class LargeOrderMonitor:
                     'price': order.get('price'),
                     'gateway_name': order.get('gateway_name')
                 }
-                data_service.save_large_order(db_order_data)
-                logger.info(f"大额订单 {order.get('order_id')} 已保存到数据库")
+                saved = data_store.save_large_order(db_order_data)
+                if saved:
+                    logger.info(f"大额订单 {order.get('order_id')} 已保存到数据存储")
+                else:
+                    logger.error(f"保存大额订单到数据存储失败")
             except Exception as db_error:
-                logger.error(f"保存大额订单到数据库错误: {db_error}")
+                logger.error(f"保存大额订单到数据存储错误: {db_error}")
             
             logger.info(f"已记录大额订单: {order.get('order_id')}，数量 {order.get('quantity')} 单位")
             return True

@@ -8,7 +8,9 @@ from engine.risk_manager import RiskManager
 from engine.liquidity_analyzer import LiquidityAnalyzer
 from engine.event_recorder import EventRecorder
 from engine.large_order_monitor import LargeOrderMonitor
+from engine.monitoring import monitoring_manager, AlertLevel, AlertType
 from strategy.probability_strategy import ProbabilityStrategy
+from persistence.data_store import data_store
 from utils.logger import logger
 
 class ExecutionEngine:
@@ -121,13 +123,17 @@ class ExecutionEngine:
             
             # 步骤7: 记录执行为流动性分析
             # 在实际系统中，我们会从网关获取实际执行价格
+            executed_price = order.price or Decimal('1')
             self.liquidity_analyzer.add_historical_data(
                 order.instrument.symbol,
                 datetime.now(),
-                order.price or Decimal('1'),
-                order.price or Decimal('1'),  # 模拟无滑点
+                executed_price,
+                executed_price,  # 模拟无滑点
                 order.quantity
             )
+            
+            # 步骤8: 记录交易到风险管理器
+            self.risk_manager.record_trade(order, executed_price)
             
             # 步骤8: 记录订单历史
             self._record_order_history(order, result)
@@ -138,6 +144,20 @@ class ExecutionEngine:
             result['message'] = f'意外错误: {str(e)}'
             result['steps'].append({'step': 'execution', 'status': 'error', 'message': str(e)})
             logger.error(f"提交订单 {order.order_id} 错误: {e}")
+            
+            # 创建告警
+            monitoring_manager.create_alert(
+                AlertLevel.ERROR,
+                AlertType.ORDER,
+                f"提交订单 {order.order_id} 错误: {str(e)}",
+                {
+                    'order_id': order.order_id,
+                    'instrument': order.instrument.symbol,
+                    'quantity': float(order.quantity),
+                    'price': float(order.price or 0),
+                    'error': str(e)
+                }
+            )
         
         return result
     
@@ -170,6 +190,17 @@ class ExecutionEngine:
                     'message': str(e)
                 })
                 logger.error(f"处理批量订单 {order.order_id} 错误: {e}")
+                
+                # 创建告警
+                monitoring_manager.create_alert(
+                    AlertLevel.ERROR,
+                    AlertType.ORDER,
+                    f"处理批量订单 {order.order_id} 错误: {str(e)}",
+                    {
+                        'order_id': order.order_id,
+                        'error': str(e)
+                    }
+                )
         
         return results
     
@@ -223,27 +254,104 @@ class ExecutionEngine:
             
             # 保存到数据库
             try:
-                # 延迟导入以避免循环导入
-                from dashboard.data_service import data_service
-                
                 order_data = {
                     'order_id': order.order_id,
-                    'account_id': order.account_id,
-                    'instrument': order.instrument.symbol,
+                    'instrument': {'symbol': order.instrument.symbol},
                     'side': order.side.value,
                     'type': order.type.value,
                     'quantity': order.quantity,
                     'price': order.price,
                     'status': order.status,
-                    'filled_qty': 0,  # 默认值为0，订单成交时更新
-                    'gateway_order_id': order.gateway_order_id
+                    'filled_qty': order.filled_qty,
+                    'gateway_order_id': order.gateway_order_id,
+                    'account_id': order.account_id,
+                    'outcome': order.outcome
                 }
-                data_service.save_order(order_data)
-                logger.info(f"订单 {order.order_id} 已保存到数据库")
+                
+                saved = data_store.save_order(order_data, result)
+                if saved:
+                    logger.info(f"订单 {order.order_id} 已保存到数据库")
+                else:
+                    logger.error(f"保存订单 {order.order_id} 到数据库失败")
             except Exception as db_error:
                 logger.error(f"保存订单到数据库错误: {db_error}")
         except Exception as e:
             logger.error(f"记录订单历史错误: {e}")
+    
+    def sync_order_status(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """同步订单状态
+        
+        Args:
+            order_id: 订单ID
+            
+        Returns:
+            Optional[Dict[str, Any]]: 订单状态信息
+        """
+        try:
+            # 查找订单
+            for order_entry in self._order_history:
+                if order_entry['order_id'] == order_id:
+                    gateway_name = order_entry.get('gateway_name', 'polymarket')
+                    gateway_order_id = order_entry.get('gateway_order_id')
+                    
+                    if gateway_name in self.gateways and gateway_order_id:
+                        gateway = self.gateways[gateway_name]
+                        # 从网关获取订单状态
+                        order_status = gateway.get_order_status(gateway_order_id)
+                        
+                        if order_status:
+                            # 更新订单状态
+                            order_status['order_id'] = order_id
+                            order_status['gateway_order_id'] = gateway_order_id
+                            return order_status
+            
+            return None
+        except Exception as e:
+            logger.error(f"同步订单状态错误: {e}")
+            return None
+    
+    def sync_all_orders(self) -> Dict[str, Any]:
+        """同步所有活跃订单的状态
+        
+        Returns:
+            Dict[str, Any]: 同步结果
+        """
+        try:
+            results = {
+                'total': 0,
+                'updated': 0,
+                'errors': 0,
+                'details': []
+            }
+            
+            # 获取活跃订单
+            active_orders = [order for order in self._order_history 
+                           if order['status'] in ['submitted', 'partially_filled']]
+            
+            results['total'] = len(active_orders)
+            
+            for order_entry in active_orders:
+                try:
+                    order_status = self.sync_order_status(order_entry['order_id'])
+                    if order_status:
+                        results['updated'] += 1
+                        results['details'].append(order_status)
+                except Exception as e:
+                    results['errors'] += 1
+                    results['details'].append({
+                        'order_id': order_entry['order_id'],
+                        'error': str(e)
+                    })
+            
+            return results
+        except Exception as e:
+            logger.error(f"同步所有订单状态错误: {e}")
+            return {
+                'total': 0,
+                'updated': 0,
+                'errors': 1,
+                'details': [{'error': str(e)}]
+            }
     
     def record_event_data(self, event_name: str, data: Dict[str, Any]):
         """记录事件数据，增强错误处理"""
@@ -254,20 +362,12 @@ class ExecutionEngine:
             else:
                 logger.warning(f"事件数据记录失败: {event_name}")
             
-            # 保存到数据库
-            try:
-                # 延迟导入以避免循环导入
-                from dashboard.data_service import data_service
-                
-                event_data = {
-                    'event_name': event_name,
-                    'timestamp': datetime.now(),
-                    'data': data
-                }
-                data_service.save_event(event_data)
-                logger.info(f"事件 {event_name} 已保存到数据库")
-            except Exception as db_error:
-                logger.error(f"保存事件到数据库错误: {db_error}")
+            # 保存到数据存储
+            saved = data_store.save_event(event_name, data)
+            if saved:
+                logger.info(f"事件 {event_name} 已保存到数据存储")
+            else:
+                logger.error(f"保存事件到数据存储失败: {event_name}")
         except Exception as e:
             logger.error(f"记录事件数据错误: {e}")
     

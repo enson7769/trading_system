@@ -13,6 +13,10 @@ class OrderType(Enum):
 class OrderStatus(Enum):
     """订单状态枚举"""
     PENDING = "pending"  # 待处理
+    SUBMITTED = "submitted"  # 已提交
+    PARTIALLY_FILLED = "partially_filled"  # 部分成交
     FILLED = "filled"  # 已成交
     CANCELLED = "cancelled"  # 已取消
     REJECTED = "rejected"  # 已拒绝
+    EXPIRED = "expired"  # 已过期
+    ERROR = "error"  # 错误

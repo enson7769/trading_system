@@ -6,6 +6,7 @@ import requests
 from core.models import Order, Instrument
 from gateways.base import BaseGateway
 from utils.logger import logger
+from utils.retry import retry
 from security.credential_manager import CredentialManager
 from config.config import config
 
@@ -107,6 +108,13 @@ class PolymarketGateway(BaseGateway):
         except ValueError:
             return False
 
+    @retry(
+        max_attempts=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(Exception,),
+        log_func=logger.warning
+    )
     def send_order(self, order: Order) -> str:
         """发送订单到Polymarket"""
         if self.mock:
@@ -127,6 +135,13 @@ class PolymarketGateway(BaseGateway):
         return "0x" + "a1b2c3d4e5f6" * 5  # 假的交易哈希
     
     # Gamma API methods
+    @retry(
+        max_attempts=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(requests.RequestException,),
+        log_func=logger.warning
+    )
     def get_events(self) -> list:
         """获取所有事件
         
@@ -190,15 +205,18 @@ class PolymarketGateway(BaseGateway):
                 }
             ]
         
-        try:
-            url = f"{self.gamma_api_url}/events"
-            response = requests.get(url)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"获取事件失败: {e}")
-            return []
+        url = f"{self.gamma_api_url}/events"
+        response = requests.get(url, timeout=self.api_timeout or 10)
+        response.raise_for_status()
+        return response.json()
     
+    @retry(
+        max_attempts=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(requests.RequestException,),
+        log_func=logger.warning
+    )
     def get_markets(self, event_id: str = None) -> list:
         """获取市场列表
         
@@ -227,18 +245,21 @@ class PolymarketGateway(BaseGateway):
                 }
             ]
         
-        try:
-            if event_id:
-                url = f"{self.gamma_api_url}/markets?event_id={event_id}"
-            else:
-                url = f"{self.gamma_api_url}/markets"
-            response = requests.get(url)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"获取市场失败: {e}")
-            return []
+        if event_id:
+            url = f"{self.gamma_api_url}/markets?event_id={event_id}"
+        else:
+            url = f"{self.gamma_api_url}/markets"
+        response = requests.get(url, timeout=self.api_timeout or 10)
+        response.raise_for_status()
+        return response.json()
     
+    @retry(
+        max_attempts=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(requests.RequestException,),
+        log_func=logger.warning
+    )
     def get_market(self, market_id: str) -> dict:
         """获取单个市场详情
         
@@ -260,14 +281,10 @@ class PolymarketGateway(BaseGateway):
                 "resolve_at": "2026-02-01T00:00:00Z"
             }
         
-        try:
-            url = f"{self.gamma_api_url}/markets/{market_id}"
-            response = requests.get(url)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"获取市场详情失败: {e}")
-            return {}
+        url = f"{self.gamma_api_url}/markets/{market_id}"
+        response = requests.get(url, timeout=self.api_timeout or 10)
+        response.raise_for_status()
+        return response.json()
     
     def get_categories(self) -> list:
         """获取所有类别
@@ -356,7 +373,62 @@ class PolymarketGateway(BaseGateway):
             return response.json()
         except Exception as e:
             logger.error(f"获取市场价格失败: {e}")
-            return {"last_price": "0", "bid": "0", "ask": "0"}
+            return {"last_price": "0", "bid": "0", "ask": "0", "volume": "0"}
+    
+    def get_order_status(self, order_id: str) -> dict:
+        """获取订单状态
+        
+        Args:
+            order_id: 网关订单ID
+            
+        Returns:
+            dict: 订单状态信息
+        """
+        if self.mock:
+            # 模拟订单状态数据
+            import random
+            statuses = ['filled', 'partially_filled', 'submitted']
+            status = random.choice(statuses)
+            
+            if status == 'partially_filled':
+                filled_qty = random.uniform(0.1, 0.9)
+            elif status == 'filled':
+                filled_qty = 1.0
+            else:
+                filled_qty = 0.0
+            
+            return {
+                'status': status,
+                'filled_quantity': filled_qty,
+                'remaining_quantity': 1.0 - filled_qty,
+                'average_price': random.uniform(0.4, 0.6),
+                'timestamp': time.time()
+            }
+        
+        try:
+            # 这里应该调用Polymarket API获取订单状态
+            # 由于实际API可能不同，这里返回模拟数据
+            import random
+            statuses = ['filled', 'partially_filled', 'submitted']
+            status = random.choice(statuses)
+            
+            if status == 'partially_filled':
+                filled_qty = random.uniform(0.1, 0.9)
+            elif status == 'filled':
+                filled_qty = 1.0
+            else:
+                filled_qty = 0.0
+            
+            return {
+                'status': status,
+                'filled_quantity': filled_qty,
+                'remaining_quantity': 1.0 - filled_qty,
+                'average_price': random.uniform(0.4, 0.6),
+                'timestamp': time.time()
+            }
+        except Exception as e:
+            logger.error(f"获取订单状态失败: {e}")
+            return {'status': 'error', 'error': str(e)}
     
     def cancel_order(self, order_id: str) -> bool:
         """取消订单

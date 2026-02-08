@@ -86,8 +86,8 @@ class PolymarketDataPage:
             # 然后插入新的选中记录
             if selected_outcomes:
                 insert_query = "INSERT INTO selected_outcomes (market_id, outcome, is_selected) VALUES (%s, %s, TRUE)"
-                for outcome in selected_outcomes:
-                    db_manager.execute_update(insert_query, (market_id, outcome))
+                params_list = [(market_id, outcome) for outcome in selected_outcomes]
+                db_manager.execute_batch(insert_query, params_list)
             return True
         except Exception as e:
             st.error(f"保存选中的结果选项失败: {e}")
