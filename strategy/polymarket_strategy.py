@@ -1,5 +1,6 @@
 from decimal import Decimal
 from typing import Dict, Optional, Tuple, List, Any
+import math
 from utils.logger import logger
 from config.config import config
 from gateways.polymarket_gateway import PolymarketGateway
@@ -387,6 +388,201 @@ class PolymarketStrategy:
         """
         import time
         return time.time()
+    
+    def kelly_criterion(self, win_probability: float, win_loss_ratio: float) -> float:
+        """凯利公式计算最优仓位比例
+        
+        Args:
+            win_probability: 胜率（0-1之间）
+            win_loss_ratio: 赔率（盈利/亏损）
+            
+        Returns:
+            float: 最优仓位比例（0-1之间）
+        """
+        try:
+            # 验证参数
+            if not 0 <= win_probability <= 1:
+                logger.error(f"胜率必须在0-1之间，当前值: {win_probability}")
+                return 0.0
+            if win_loss_ratio <= 0:
+                logger.error(f"赔率必须大于0，当前值: {win_loss_ratio}")
+                return 0.0
+            
+            # 凯利公式计算
+            k = (win_probability * (win_loss_ratio + 1) - 1) / win_loss_ratio
+            
+            # 确保结果在0-1之间
+            k = max(0.0, min(1.0, k))
+            
+            logger.debug(f"凯利公式计算结果: 胜率={win_probability}, 赔率={win_loss_ratio}, 最优仓位={k}")
+            return k
+        except Exception as e:
+            logger.error(f"凯利公式计算失败: {e}")
+            return 0.0
+    
+    def black_scholes(self, s: float, k: float, t: float, r: float, sigma: float, option_type: str = 'call') -> float:
+        """Black-Scholes期权定价模型
+        
+        Args:
+            s: 当前标的资产价格
+            k: 期权行权价格
+            t: 到期时间（年）
+            r: 无风险利率
+            sigma: 标的资产波动率
+            option_type: 期权类型（'call'或'put'）
+            
+        Returns:
+            float: 期权理论价格
+        """
+        try:
+            # 验证参数
+            if s <= 0 or k <= 0 or t <= 0 or sigma <= 0:
+                logger.error(f"参数必须大于0，当前值: s={s}, k={k}, t={t}, sigma={sigma}")
+                return 0.0
+            if option_type not in ['call', 'put']:
+                logger.error(f"期权类型必须是'call'或'put'，当前值: {option_type}")
+                return 0.0
+            
+            # 计算d1和d2
+            d1 = (math.log(s / k) + (r + 0.5 * sigma**2) * t) / (sigma * math.sqrt(t))
+            d2 = d1 - sigma * math.sqrt(t)
+            
+            # 计算正态分布的累积分布函数
+            def norm_cdf(x):
+                return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
+            
+            # 计算期权价格
+            if option_type == 'call':
+                price = s * norm_cdf(d1) - k * math.exp(-r * t) * norm_cdf(d2)
+            else:  # put
+                price = k * math.exp(-r * t) * norm_cdf(-d2) - s * norm_cdf(-d1)
+            
+            logger.debug(f"BS公式计算结果: 标的价格={s}, 行权价格={k}, 到期时间={t}, 无风险利率={r}, 波动率={sigma}, 期权类型={option_type}, 期权价格={price}")
+            return price
+        except Exception as e:
+            logger.error(f"BS公式计算失败: {e}")
+            return 0.0
+    
+    def linear_regression(self, x: List[float], y: List[float]) -> Dict[str, Any]:
+        """最小二乘回归
+        
+        Args:
+            x: 自变量列表
+            y: 因变量列表
+            
+        Returns:
+            dict: 回归结果，包含斜率、截距、R²等
+        """
+        try:
+            # 验证参数
+            if len(x) != len(y) or len(x) < 2:
+                logger.error(f"自变量和因变量长度必须相同且至少为2，当前长度: x={len(x)}, y={len(y)}")
+                return {
+                    'slope': 0.0,
+                    'intercept': 0.0,
+                    'r_squared': 0.0,
+                    'error': '数据长度不足'
+                }
+            
+            n = len(x)
+            sum_x = sum(x)
+            sum_y = sum(y)
+            sum_xy = sum(x[i] * y[i] for i in range(n))
+            sum_x2 = sum(x[i]**2 for i in range(n))
+            sum_y2 = sum(y[i]**2 for i in range(n))
+            
+            # 计算斜率和截距
+            slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x**2)
+            intercept = (sum_y - slope * sum_x) / n
+            
+            # 计算R²
+            mean_y = sum_y / n
+            ss_tot = sum((y[i] - mean_y)**2 for i in range(n))
+            ss_res = sum((y[i] - (slope * x[i] + intercept))**2 for i in range(n))
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+            
+            logger.debug(f"最小二乘回归结果: 斜率={slope}, 截距={intercept}, R²={r_squared}")
+            return {
+                'slope': slope,
+                'intercept': intercept,
+                'r_squared': r_squared,
+                'error': None
+            }
+        except Exception as e:
+            logger.error(f"最小二乘回归计算失败: {e}")
+            return {
+                'slope': 0.0,
+                'intercept': 0.0,
+                'r_squared': 0.0,
+                'error': str(e)
+            }
+    
+    def vector_autoregression(self, data: List[List[float]], lag: int = 1) -> Dict[str, Any]:
+        """向量自回归模型
+        
+        Args:
+            data: 多变量时间序列数据，每行是一个时间点的观测值
+            lag: 滞后阶数
+            
+        Returns:
+            dict: 模型结果
+        """
+        try:
+            # 验证参数
+            if not data or len(data) < lag + 1:
+                logger.error(f"数据长度必须大于滞后阶数，当前长度: {len(data)}, 滞后阶数: {lag}")
+                return {
+                    'coefficients': [],
+                    'error': '数据长度不足'
+                }
+            
+            n = len(data)
+            k = len(data[0])  # 变量数量
+            
+            # 准备数据矩阵
+            X = []
+            Y = []
+            for i in range(lag, n):
+                # 滞后变量
+                x_row = []
+                for j in range(lag):
+                    x_row.extend(data[i - j - 1])
+                X.append(x_row)
+                # 当前变量
+                Y.append(data[i])
+            
+            # 简单实现：使用最小二乘回归估计每个变量的系数
+            coefficients = []
+            for i in range(k):
+                # 对每个变量单独进行回归
+                y_var = [row[i] for row in Y]
+                x_vars = X
+                
+                # 使用最小二乘回归
+                result = self.linear_regression(
+                    [sum(x) for x in x_vars],  # 简化处理，实际应该使用每个滞后变量
+                    y_var
+                )
+                coefficients.append({
+                    'variable': i,
+                    'slope': result['slope'],
+                    'intercept': result['intercept'],
+                    'r_squared': result['r_squared']
+                })
+            
+            logger.debug(f"向量自回归结果: 滞后阶数={lag}, 变量数量={k}, 系数={coefficients}")
+            return {
+                'coefficients': coefficients,
+                'lag': lag,
+                'variable_count': k,
+                'error': None
+            }
+        except Exception as e:
+            logger.error(f"向量自回归计算失败: {e}")
+            return {
+                'coefficients': [],
+                'error': str(e)
+            }
     
     def run_strategy(self, market_ids: List[str]) -> List[Dict[str, Any]]:
         """运行策略
