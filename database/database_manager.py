@@ -1,5 +1,6 @@
 import mysql.connector
 from mysql.connector import Error
+from mysql.connector.pooling import MySQLConnectionPool
 import os
 import json
 from typing import Dict, Any, Optional, List, Tuple
@@ -16,6 +17,8 @@ class DatabaseManager:
         self.config = self._load_config()
         self.connection = None
         self.cursor = None
+        self.pool = None
+        self._initialize_connection_pool()
     
     def _load_config(self) -> Dict[str, str]:
         """加载数据库配置"""
@@ -30,9 +33,43 @@ class DatabaseManager:
             'database': db_config.get('database', 'trading_system')
         }
     
+    def _initialize_connection_pool(self):
+        """初始化数据库连接池"""
+        try:
+            # 配置连接池
+            pool_config = {
+                'pool_name': 'trading_system_pool',
+                'pool_size': 5,
+                'pool_reset_session': True,
+                'host': self.config['host'],
+                'port': self.config['port'],
+                'user': self.config['user'],
+                'password': self.config['password'],
+                'database': self.config['database']
+            }
+            
+            # 创建连接池
+            self.pool = MySQLConnectionPool(**pool_config)
+            logger.info("数据库连接池初始化成功")
+        except Error as e:
+            logger.error(f"初始化数据库连接池错误: {e}")
+            self.pool = None
+    
     def connect(self) -> bool:
         """连接到数据库"""
         try:
+            # 优先使用连接池
+            if self.pool:
+                try:
+                    self.connection = self.pool.get_connection()
+                    if self.connection.is_connected():
+                        self.cursor = self.connection.cursor(dictionary=True)
+                        logger.debug(f"从连接池获取数据库连接: {self.config['database']}")
+                        return True
+                except Error as e:
+                    logger.error(f"从连接池获取连接错误: {e}")
+            
+            # 如果连接池不可用，使用传统连接方式
             self.connection = mysql.connector.connect(
                 host=self.config['host'],
                 port=self.config['port'],
@@ -55,9 +92,18 @@ class DatabaseManager:
         try:
             if self.cursor:
                 self.cursor.close()
+                self.cursor = None
             if self.connection and self.connection.is_connected():
-                self.connection.close()
-                logger.info("已断开MySQL数据库连接")
+                # 检查是否是从连接池获取的连接
+                if hasattr(self.connection, 'pool_name'):
+                    # 从连接池获取的连接，返回给池
+                    self.connection.close()
+                    logger.debug("已将连接返回给连接池")
+                else:
+                    # 传统连接，直接关闭
+                    self.connection.close()
+                    logger.info("已断开MySQL数据库连接")
+                self.connection = None
         except Error as e:
             logger.error(f"断开MySQL数据库连接错误: {e}")
     
@@ -192,10 +238,12 @@ class DatabaseManager:
             # 关闭自动提交
             self.connection.autocommit = False
             
-            affected_rows = 0
-            for params in params_list:
-                self.cursor.execute(query, params)
-                affected_rows += self.cursor.rowcount
+            # 使用executemany批量执行
+            if params_list:
+                self.cursor.executemany(query, params_list)
+                affected_rows = self.cursor.rowcount
+            else:
+                affected_rows = 0
             
             # 批量提交
             self.connection.commit()
@@ -203,6 +251,7 @@ class DatabaseManager:
             # 恢复自动提交
             self.connection.autocommit = True
             
+            logger.debug(f"批量执行完成，影响行数: {affected_rows}")
             return affected_rows
         except Error as e:
             logger.error(f"批量执行错误: {e}")

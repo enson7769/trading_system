@@ -65,20 +65,32 @@ class PolymarketDataPage:
             )
             st.info('无事件数据可用。')
     
-    def _get_selected_outcomes(self, market_id):
-        """从数据库中读取选中的结果选项"""
+    def _get_all_selected_outcomes(self):
+        """从数据库中读取所有市场的选中结果选项（缓存优化）"""
         try:
-            query = "SELECT outcome FROM selected_outcomes WHERE market_id = %s AND is_selected = TRUE"
-            result = db_manager.execute_query(query, (market_id,))
+            query = "SELECT market_id, outcome FROM selected_outcomes WHERE is_selected = TRUE"
+            result = db_manager.execute_query(query)
             if result:
-                return [row['outcome'] for row in result]
+                # 按市场ID分组
+                selected_outcomes_map = {}
+                for row in result:
+                    market_id = row['market_id']
+                    outcome = row['outcome']
+                    if market_id not in selected_outcomes_map:
+                        selected_outcomes_map[market_id] = []
+                    selected_outcomes_map[market_id].append(outcome)
+                return selected_outcomes_map
         except Exception as e:
-            st.error(f"读取选中的结果选项失败: {e}")
-        return []
+            logger.error(f"读取所有选中的结果选项失败: {e}")
+        return {}
     
     def _save_selected_outcomes(self, market_id, selected_outcomes):
         """保存选中的结果选项到数据库"""
         try:
+            # 开始事务
+            if not db_manager.is_connected():
+                db_manager.connect()
+            
             # 首先删除该市场的所有选中记录
             delete_query = "DELETE FROM selected_outcomes WHERE market_id = %s"
             db_manager.execute_update(delete_query, (market_id,))
@@ -90,7 +102,7 @@ class PolymarketDataPage:
                 db_manager.execute_batch(insert_query, params_list)
             return True
         except Exception as e:
-            st.error(f"保存选中的结果选项失败: {e}")
+            logger.error(f"保存选中的结果选项失败: {e}")
             return False
     
     def _render_markets_tab(self):
@@ -109,6 +121,9 @@ class PolymarketDataPage:
         if not markets_df.empty:
             # 根据输入的数量过滤市场数据
             filtered_markets_df = markets_df.head(market_count)
+            
+            # 一次性读取所有市场的选中结果选项（缓存优化）
+            selected_outcomes_map = self._get_all_selected_outcomes()
             
             # 为每个市场显示结果选项的多选框
             for index, row in filtered_markets_df.iterrows():
@@ -141,8 +156,8 @@ class PolymarketDataPage:
                     st.write("**结果选项:**")
                     selected_outcomes = []
                     
-                    # 从数据库中读取之前选中的结果选项
-                    previous_selected = self._get_selected_outcomes(market_id)
+                    # 从缓存中获取之前选中的结果选项
+                    previous_selected = selected_outcomes_map.get(market_id, [])
                     
                     for outcome in outcomes:
                         # 检查结果选项是否在之前选中的列表中
@@ -152,11 +167,18 @@ class PolymarketDataPage:
                             selected_outcomes.append(outcome)
                     
                     # 保存选中的结果选项到数据库
-                    if st.button(f"保存选中的结果选项", key=f"save_{market_id}"):
-                        if self._save_selected_outcomes(market_id, selected_outcomes):
-                            st.success(f"已保存市场 {market_id} 的选中结果选项: {', '.join(selected_outcomes) if selected_outcomes else '无'}")
-                        else:
-                            st.error("保存选中的结果选项失败")
+                    col1, col2 = st.columns([3, 1])
+                    with col2:
+                        # 添加加载状态指示器
+                        save_button = st.button(f"保存选中的结果选项", key=f"save_{market_id}")
+                        
+                        if save_button:
+                            # 显示加载状态
+                            with st.spinner("正在保存..."):
+                                if self._save_selected_outcomes(market_id, selected_outcomes):
+                                    st.success(f"已保存市场 {market_id} 的选中结果选项: {', '.join(selected_outcomes) if selected_outcomes else '无'}")
+                                else:
+                                    st.error("保存选中的结果选项失败")
             
             # 显示过滤信息
             st.caption(f'显示前 {len(filtered_markets_df)} 个市场，共 {len(markets_df)} 个市场')
