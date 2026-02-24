@@ -67,11 +67,12 @@ class PolymarketGateway(BaseGateway):
                 logger.info(f"[MOCK] 已连接Polymarket钱包: {self.address[:6]}...{self.address[-4:]}")
             return
 
+        # 检查RPC连接
         if not self.w3.is_connected():
-            raise ConnectionError("连接RPC失败")
+            raise ConnectionError("连接RPC失败，请检查RPC节点URL是否正确")
 
         # 如果配置文件中有地址，直接使用
-        if self.address:
+        if self.address and self.address != "YOUR_POLYMARKET_ADDRESS":
             logger.info(f"已连接Polymarket钱包: {self.address[:6]}...{self.address[-4:]}")
             return
 
@@ -161,7 +162,7 @@ class PolymarketGateway(BaseGateway):
                     "updated_at": "2026-02-05T12:00:00Z",
                     "image_url": "https://polymarket.com/images/events/2026-election.jpg",
                     "cover_image_url": "https://polymarket.com/images/events/2026-election-cover.jpg",
-                    "featured": true,
+                    "featured": True,
                     "resolved_at": null
                 },
                 {
@@ -174,7 +175,7 @@ class PolymarketGateway(BaseGateway):
                     "updated_at": "2026-02-05T10:00:00Z",
                     "image_url": "https://polymarket.com/images/events/fed-meeting.jpg",
                     "cover_image_url": "https://polymarket.com/images/events/fed-meeting-cover.jpg",
-                    "featured": true,
+                    "featured": True,
                     "resolved_at": null
                 },
                 {
