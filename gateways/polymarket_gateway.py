@@ -54,6 +54,30 @@ class PolymarketGateway(BaseGateway):
         self.api_timeout = gateway_config.get('api_timeout')
         self.api_retries = gateway_config.get('api_retries')
 
+    def _check_geoblock(self):
+        """检查地区限制"""
+        try:
+            import requests
+            url = "https://polymarket.com/api/geoblock"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                geoblock_data = response.json()
+                if geoblock_data.get('blocked'):
+                    country = geoblock_data.get('country', 'Unknown')
+                    ip = geoblock_data.get('ip', 'Unknown')
+                    error_message = f"地区限制：您的IP地址 ({ip}) 来自 {country}，无法访问Polymarket。Polymarket仅对特定国家/地区开放。"
+                    logger.error(error_message)
+                    raise ConnectionError(error_message)
+                else:
+                    logger.info("地区限制检查通过")
+            else:
+                logger.warning(f"地区限制检查失败，状态码: {response.status_code}")
+        except ConnectionError:
+            # 重新抛出地区限制错误
+            raise
+        except Exception as e:
+            logger.warning(f"地区限制检查异常: {e}")
+
     def connect(self):
         """连接到Polymarket"""
         if self.mock:
@@ -66,6 +90,9 @@ class PolymarketGateway(BaseGateway):
                 self.address = "0xMockAddress12345678901234567890123456789012"
                 logger.info(f"[MOCK] 已连接Polymarket钱包: {self.address[:6]}...{self.address[-4:]}")
             return
+
+        # 检查地区限制
+        self._check_geoblock()
 
         # 检查RPC连接
         if not self.w3.is_connected():
