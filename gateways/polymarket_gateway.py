@@ -45,6 +45,7 @@ class PolymarketGateway(BaseGateway):
         self.clob_api_url = gateway_config.get('clob_api_url')
         self.data_api_url = gateway_config.get('data_api_url')
         self.websocket_url = gateway_config.get('websocket_url')
+        self.withdraw_api_url = gateway_config.get('withdraw_api_url', self.clob_api_url)  # 默认为clob_api_url
         
         # 从配置加载账户信息
         self.address = gateway_config.get('address')
@@ -95,8 +96,99 @@ class PolymarketGateway(BaseGateway):
         self._check_geoblock()
 
         # 检查RPC连接
+        max_retries = 3
+        retry_count = 0
+        
+        # 打印当前RPC节点信息
+        logger.info(f"当前RPC节点: {self.rpc_url}")
+        
+        # 测试网络连接
+        import requests
+        try:
+            response = requests.get(self.rpc_url, timeout=5)
+            logger.info(f"RPC节点网络连接测试: 状态码 {response.status_code}")
+        except Exception as e:
+            logger.warning(f"RPC节点网络连接测试失败: {e}")
+
+        while retry_count < max_retries:
+            try:
+                # 打印详细的连接状态
+                logger.debug(f"尝试连接RPC节点: {self.rpc_url}")
+                
+                if self.w3.is_connected():
+                    logger.info("RPC连接成功")
+                    # 打印链ID和区块号
+                    try:
+                        chain_id = self.w3.eth.chain_id
+                        block_number = self.w3.eth.block_number
+                        logger.info(f"链ID: {chain_id}, 当前区块号: {block_number}")
+                    except Exception as e:
+                        logger.warning(f"获取链信息失败: {e}")
+                    break
+                else:
+                    logger.warning(f"RPC连接失败，正在尝试重新连接... (尝试 {retry_count + 1}/{max_retries})")
+                    # 尝试重新创建HTTPProvider
+                    self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+                    retry_count += 1
+                    time.sleep(2)  # 等待2秒后重试
+            except Exception as e:
+                logger.warning(f"RPC连接异常: {e}，正在尝试重新连接... (尝试 {retry_count + 1}/{max_retries})")
+                # 尝试重新创建HTTPProvider
+                self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+                retry_count += 1
+                time.sleep(2)  # 等待2秒后重试
+
         if not self.w3.is_connected():
-            raise ConnectionError("连接RPC失败，请检查RPC节点URL是否正确")
+            # 尝试使用备用RPC节点
+            backup_rpc_urls = [
+                "https://rpc.ankr.com/polygon",
+                "https://polygon-bor.publicnode.com",
+                "https://rpc-mainnet.matic.network",
+                "https://polygon-rpc.com",
+                "https://rpc.quicknode.com/polygon"
+            ]
+            
+            for backup_rpc in backup_rpc_urls:
+                # 跳过与当前RPC相同的节点
+                if backup_rpc == self.rpc_url:
+                    continue
+                    
+                try:
+                    logger.info(f"尝试使用备用RPC节点: {backup_rpc}")
+                    # 测试网络连接
+                    response = requests.get(backup_rpc, timeout=5)
+                    logger.info(f"备用RPC节点网络连接测试: 状态码 {response.status_code}")
+                    
+                    self.w3 = Web3(Web3.HTTPProvider(backup_rpc))
+                    if self.w3.is_connected():
+                        logger.info(f"备用RPC节点连接成功: {backup_rpc}")
+                        # 打印链ID和区块号
+                        try:
+                            chain_id = self.w3.eth.chain_id
+                            block_number = self.w3.eth.block_number
+                            logger.info(f"链ID: {chain_id}, 当前区块号: {block_number}")
+                        except Exception as e:
+                            logger.warning(f"获取链信息失败: {e}")
+                        # 更新当前RPC URL
+                        self.rpc_url = backup_rpc
+                        break
+                except Exception as e:
+                    logger.warning(f"备用RPC节点连接失败: {backup_rpc}, 错误: {e}")
+
+        if not self.w3.is_connected():
+            # 最后尝试使用公共RPC节点
+            public_rpc = "https://polygon.llamarpc.com"
+            try:
+                logger.info(f"尝试使用公共RPC节点: {public_rpc}")
+                self.w3 = Web3(Web3.HTTPProvider(public_rpc))
+                if self.w3.is_connected():
+                    logger.info(f"公共RPC节点连接成功: {public_rpc}")
+                    self.rpc_url = public_rpc
+                else:
+                    raise ConnectionError("所有RPC节点连接失败")
+            except Exception as e:
+                logger.error(f"公共RPC节点连接失败: {e}")
+                raise ConnectionError("连接RPC失败，请检查网络连接或RPC节点URL是否正确")
 
         # 如果配置文件中有地址，直接使用
         if self.address and self.address != "YOUR_POLYMARKET_ADDRESS":
@@ -245,11 +337,16 @@ class PolymarketGateway(BaseGateway):
         exceptions=(requests.RequestException,),
         log_func=logger.warning
     )
-    def get_markets(self, event_id: str = None) -> list:
+    def get_markets(self, event_id: str = None, slug: str = None, tag: str = None, active: bool = True, closed: bool = False, limit: int = 100) -> list:
         """获取市场列表
         
         Args:
             event_id: 事件ID（可选）
+            slug: 市场slug（可选）
+            tag: 标签（可选）
+            active: 是否活跃（默认true）
+            closed: 是否已关闭（默认false）
+            limit: 返回数量限制（默认100）
             
         Returns:
             list: 市场列表
@@ -262,24 +359,104 @@ class PolymarketGateway(BaseGateway):
                     "event_id": "event1",
                     "question": "Will the Fed raise rates?",
                     "outcomes": ["Yes", "No"],
-                    "status": "active"
+                    "status": "active",
+                    "slug": "fed-rates",
+                    "clobTokenIds": ["123456...", "789012..."]
                 },
                 {
                     "id": "market2",
                     "event_id": "event2",
                     "question": "Will CPI be above 3%?",
                     "outcomes": ["Yes", "No"],
-                    "status": "active"
+                    "status": "active",
+                    "slug": "cpi-prediction",
+                    "clobTokenIds": ["234567...", "890123..."]
                 }
             ]
         
+        # 构建查询参数
+        params = {
+            "active": str(active).lower(),
+            "closed": str(closed).lower(),
+            "limit": str(limit)
+        }
+        
         if event_id:
-            url = f"{self.gamma_api_url}/markets?event_id={event_id}"
-        else:
-            url = f"{self.gamma_api_url}/markets"
-        response = requests.get(url, timeout=self.api_timeout or 10)
+            params["event_id"] = event_id
+        
+        if slug:
+            params["slug"] = slug
+        
+        if tag:
+            params["tag"] = tag
+        
+        url = f"{self.gamma_api_url}/markets"
+        response = requests.get(url, params=params, timeout=self.api_timeout or 10)
         response.raise_for_status()
         return response.json()
+    
+    @retry(
+        max_attempts=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(requests.RequestException,),
+        log_func=logger.warning
+    )
+    def get_markets_by_slug(self, slug: str, active: bool = True, closed: bool = False, limit: int = 100) -> list:
+        """按Slug查询市场
+        
+        Args:
+            slug: 市场slug
+            active: 是否活跃（默认true）
+            closed: 是否已关闭（默认false）
+            limit: 返回数量限制（默认100）
+            
+        Returns:
+            list: 市场列表
+        """
+        return self.get_markets(slug=slug, active=active, closed=closed, limit=limit)
+    
+    @retry(
+        max_attempts=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(requests.RequestException,),
+        log_func=logger.warning
+    )
+    def get_markets_by_tag(self, tag: str, active: bool = True, closed: bool = False, limit: int = 100) -> list:
+        """按标签查询市场
+        
+        Args:
+            tag: 标签
+            active: 是否活跃（默认true）
+            closed: 是否已关闭（默认false）
+            limit: 返回数量限制（默认100）
+            
+        Returns:
+            list: 市场列表
+        """
+        return self.get_markets(tag=tag, active=active, closed=closed, limit=limit)
+    
+    @retry(
+        max_attempts=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(requests.RequestException,),
+        log_func=logger.warning
+    )
+    def get_markets_by_event(self, event_id: str, active: bool = True, closed: bool = False, limit: int = 100) -> list:
+        """通过事件接口获取市场数据
+        
+        Args:
+            event_id: 事件ID
+            active: 是否活跃（默认true）
+            closed: 是否已关闭（默认false）
+            limit: 返回数量限制（默认100）
+            
+        Returns:
+            list: 市场列表
+        """
+        return self.get_markets(event_id=event_id, active=active, closed=closed, limit=limit)
     
     @retry(
         max_attempts=3,
@@ -384,6 +561,29 @@ class PolymarketGateway(BaseGateway):
         Returns:
             dict: 价格数据
         """
+        # 首先从数据库中获取价格数据
+        try:
+            from database.database_manager import db_manager
+            db_manager.connect()
+            
+            # 从数据库中查询价格数据
+            query = "SELECT last_price, bid, ask, volume FROM market_prices WHERE market_id = %s"
+            result = db_manager.execute_query(query, (market_id,))
+            
+            if result and len(result) > 0:
+                price_data = result[0]
+                logger.info(f"从数据库获取市场 {market_id} 价格: {price_data}")
+                return {
+                    "market_id": market_id,
+                    "last_price": str(price_data['last_price']),
+                    "bid": str(price_data['bid']),
+                    "ask": str(price_data['ask']),
+                    "volume": str(price_data['volume'])
+                }
+        except Exception as e:
+            logger.error(f"从数据库获取市场价格失败: {e}")
+        
+        # 如果数据库中没有数据，使用模拟数据
         if self.mock:
             # 模拟数据
             return {
@@ -394,11 +594,56 @@ class PolymarketGateway(BaseGateway):
                 "volume": "10000"
             }
         
+        # 真实模式下从API获取数据
         try:
             url = f"{self.clob_api_url}/price/{market_id}"
             response = requests.get(url)
+            
+            # 处理404错误（市场不存在）
+            if response.status_code == 404:
+                logger.warning(f"市场 {market_id} 不存在或已关闭，返回默认价格")
+                return {
+                    "market_id": market_id,
+                    "last_price": "0",
+                    "bid": "0",
+                    "ask": "0",
+                    "volume": "0"
+                }
+            
             response.raise_for_status()
-            return response.json()
+            price_data = response.json()
+            
+            # 将数据保存到数据库
+            try:
+                from database.database_manager import db_manager
+                db_manager.connect()
+                
+                # 插入或更新价格数据
+                insert_query = """
+                INSERT INTO market_prices (market_id, last_price, bid, ask, volume)
+                VALUES (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    last_price = VALUES(last_price),
+                    bid = VALUES(bid),
+                    ask = VALUES(ask),
+                    volume = VALUES(volume)
+                """
+                
+                db_manager.execute_update(
+                    insert_query,
+                    (
+                        market_id,
+                        float(price_data.get('last_price', '0')),
+                        float(price_data.get('bid', '0')),
+                        float(price_data.get('ask', '0')),
+                        float(price_data.get('volume', '0'))
+                    )
+                )
+                logger.info(f"市场 {market_id} 价格已保存到数据库")
+            except Exception as db_error:
+                logger.error(f"保存市场价格到数据库失败: {db_error}")
+            
+            return price_data
         except Exception as e:
             logger.error(f"获取市场价格失败: {e}")
             return {"last_price": "0", "bid": "0", "ask": "0", "volume": "0"}
@@ -543,13 +788,50 @@ class PolymarketGateway(BaseGateway):
             ]
         
         try:
-            if address:
-                url = f"{self.data_api_url}/positions/{address}"
-            else:
-                url = f"{self.data_api_url}/positions/{self.address}"
-            response = requests.get(url)
-            response.raise_for_status()
-            return response.json()
+            # 尝试使用不同的API端点获取持仓数据
+            target_address = address or self.address
+            
+            # 尝试1: 使用data-api的positions端点
+            try:
+                url = f"{self.data_api_url}/positions/{target_address}"
+                headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                positions = response.json()
+                logger.info(f"使用data-api获取持仓成功: {positions}")
+                return positions
+            except Exception as e:
+                logger.warning(f"使用data-api获取持仓失败: {e}")
+            
+            # 尝试2: 使用gamma-api的positions端点
+            try:
+                url = f"{self.gamma_api_url}/positions"
+                params = {"address": target_address}
+                headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+                response = requests.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                positions = response.json()
+                logger.info(f"使用gamma-api获取持仓成功: {positions}")
+                return positions
+            except Exception as e:
+                logger.warning(f"使用gamma-api获取持仓失败: {e}")
+            
+            # 尝试3: 使用clob-api的positions端点
+            try:
+                url = f"{self.clob_api_url}/positions"
+                params = {"address": target_address}
+                headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+                response = requests.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                positions = response.json()
+                logger.info(f"使用clob-api获取持仓成功: {positions}")
+                return positions
+            except Exception as e:
+                logger.warning(f"使用clob-api获取持仓失败: {e}")
+            
+            # 所有尝试都失败，返回空列表
+            logger.error("所有获取持仓的尝试都失败")
+            return []
         except Exception as e:
             logger.error(f"获取持仓失败: {e}")
             return []
@@ -636,15 +918,63 @@ class PolymarketGateway(BaseGateway):
             }
         
         try:
+            # 尝试使用data-api获取投资组合数据
             if address:
                 url = f"{self.data_api_url}/portfolio/{address}"
             else:
                 url = f"{self.data_api_url}/portfolio/{self.address}"
             response = requests.get(url)
             response.raise_for_status()
-            return response.json()
+            portfolio_data = response.json()
+            logger.info(f"使用data-api获取投资组合数据成功: {portfolio_data}")
+            return portfolio_data
         except Exception as e:
-            logger.error(f"获取投资组合数据失败: {e}")
+            logger.error(f"使用data-api获取投资组合数据失败: {e}")
+            
+            # 尝试使用get_positions方法获取持仓数据，并计算投资组合数据
+            try:
+                positions = self.get_positions(address)
+                if positions:
+                    total_value = 0.0
+                    total_pnl = 0.0
+                    portfolio_positions = []
+                    
+                    for position in positions:
+                        # 计算每个持仓的价值
+                        size = float(position.get('size', '0'))
+                        current_price = float(position.get('current_price', '0'))
+                        value = size * current_price
+                        pnl = float(position.get('pnl', '0'))
+                        
+                        total_value += value
+                        total_pnl += pnl
+                        
+                        portfolio_positions.append({
+                            "market_id": position.get('market_id', ''),
+                            "outcome": position.get('outcome', ''),
+                            "value": str(round(value, 2)),
+                            "pnl": str(round(pnl, 2))
+                        })
+                    
+                    # 构建投资组合数据
+                    portfolio_data = {
+                        "total_value": str(round(total_value, 2)),
+                        "total_pnl": str(round(total_pnl, 2)),
+                        "positions": portfolio_positions,
+                        "stats": {
+                            "total_trades": len(positions),
+                            "win_rate": sum(1 for p in positions if float(p.get('pnl', '0')) > 0) / len(positions) if positions else 0,
+                            "avg_win": sum(float(p.get('pnl', '0')) for p in positions if float(p.get('pnl', '0')) > 0) / sum(1 for p in positions if float(p.get('pnl', '0')) > 0) if sum(1 for p in positions if float(p.get('pnl', '0')) > 0) > 0 else 0,
+                            "avg_loss": sum(abs(float(p.get('pnl', '0'))) for p in positions if float(p.get('pnl', '0')) < 0) / sum(1 for p in positions if float(p.get('pnl', '0')) < 0) if sum(1 for p in positions if float(p.get('pnl', '0')) < 0) > 0 else 0
+                        }
+                    }
+                    
+                    logger.info(f"通过持仓数据计算投资组合数据成功: {portfolio_data}")
+                    return portfolio_data
+            except Exception as e:
+                logger.error(f"通过持仓数据计算投资组合数据失败: {e}")
+            
+            # 所有尝试都失败，返回默认数据
             return {"total_value": "0", "total_pnl": "0", "positions": []}
     
     def get_market_trades(self, market_id: str, limit: int = 50) -> list:
@@ -686,6 +1016,170 @@ class PolymarketGateway(BaseGateway):
         except Exception as e:
             logger.error(f"获取市场交易历史失败: {e}")
             return []
+    
+    def get_balance(self, address: str = None) -> dict:
+        """获取账户余额
+        
+        Args:
+            address: 用户钱包地址（可选）
+            
+        Returns:
+            dict: 账户余额数据
+        """
+        if self.mock:
+            # 模拟数据
+            return {
+                "usdc": "10000.0",
+                "usd": "10000.0"
+            }
+        
+        try:
+            # 优先使用USDC合约查询余额（最可靠的方式）
+            target_address = address or self.address
+            
+            try:
+                if self.usdc_address and self.w3.is_connected():
+                    # USDC合约ABI
+                    usdc_abi = [
+                        {
+                            "constant": True,
+                            "inputs": [{"name": "_owner", "type": "address"}],
+                            "name": "balanceOf",
+                            "outputs": [{"name": "", "type": "uint256"}],
+                            "payable": False,
+                            "stateMutability": "view",
+                            "type": "function"
+                        },
+                        {
+                            "constant": True,
+                            "inputs": [],
+                            "name": "decimals",
+                            "outputs": [{"name": "", "type": "uint8"}],
+                            "payable": False,
+                            "stateMutability": "view",
+                            "type": "function"
+                        }
+                    ]
+                    usdc_contract = self.w3.eth.contract(address=self.usdc_address, abi=usdc_abi)
+                    balance = usdc_contract.functions.balanceOf(target_address).call()
+                    decimals = usdc_contract.functions.decimals().call()
+                    usdc_balance = balance / (10 ** decimals)
+                    logger.info(f"通过合约查询USDC余额成功: {usdc_balance}")
+                    return {
+                        "usdc": str(usdc_balance),
+                        "usd": str(usdc_balance)  # 简化处理，假设1 USDC = 1 USD
+                    }
+            except Exception as e:
+                logger.warning(f"通过合约查询余额失败: {e}")
+            
+            # 如果合约查询失败，尝试使用API端点
+            # 尝试1: 使用gamma-api的balances端点
+            try:
+                url = f"{self.gamma_api_url}/balances"
+                params = {"address": target_address}
+                headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+                response = requests.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                balance_data = response.json()
+                logger.info(f"使用gamma-api获取余额成功: {balance_data}")
+                return {
+                    "usdc": str(balance_data.get("usdc", 0)),
+                    "usd": str(balance_data.get("usd", 0))
+                }
+            except Exception as e:
+                logger.warning(f"使用gamma-api获取余额失败: {e}")
+            
+            # 尝试2: 使用clob-api的balances端点
+            try:
+                url = f"{self.clob_api_url}/balances"
+                params = {"address": target_address}
+                headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+                response = requests.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                balance_data = response.json()
+                logger.info(f"使用clob-api获取余额成功: {balance_data}")
+                return {
+                    "usdc": str(balance_data.get("usdc", 0)),
+                    "usd": str(balance_data.get("usd", 0))
+                }
+            except Exception as e:
+                logger.warning(f"使用clob-api获取余额失败: {e}")
+            
+            # 尝试3: 使用data-api的wallet端点
+            try:
+                url = f"{self.data_api_url}/wallet/{target_address}"
+                response = requests.get(url)
+                response.raise_for_status()
+                balance_data = response.json()
+                logger.info(f"使用data-api获取余额成功: {balance_data}")
+                return {
+                    "usdc": str(balance_data.get("usdc_balance", 0)),
+                    "usd": str(balance_data.get("usd_value", 0))
+                }
+            except Exception as e:
+                logger.warning(f"使用data-api获取余额失败: {e}")
+            
+            # 所有尝试都失败，返回默认余额
+            logger.error("所有获取余额的尝试都失败")
+            return {
+                "usdc": "0.0",
+                "usd": "0.0"
+            }
+        except Exception as e:
+            logger.error(f"获取账户余额失败: {e}")
+            # 返回默认余额
+            return {
+                "usdc": "0.0",
+                "usd": "0.0"
+            }
+    
+    def withdraw(self, amount: float, destination: str, asset: str = "USDC") -> dict:
+        """提现功能
+        
+        Args:
+            amount: 提现金额
+            destination: 目标地址
+            asset: 提现资产类型
+            
+        Returns:
+            dict: 提现结果
+        """
+        if self.mock:
+            # 模拟提现
+            withdraw_id = f"withdraw_{int(time.time())}"
+            logger.info(f"[MOCK] 提现成功: {amount} {asset} 到地址 {destination}")
+            return {
+                "id": withdraw_id,
+                "status": "completed",
+                "amount": amount,
+                "asset": asset,
+                "destination": destination,
+                "timestamp": time.time()
+            }
+        
+        try:
+            # 构建提现请求
+            url = f"{self.withdraw_api_url}/withdraw"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}" if self.api_key else ""
+            }
+            
+            withdraw_data = {
+                "amount": amount,
+                "destination": destination,
+                "asset": asset
+            }
+            
+            response = requests.post(url, json=withdraw_data, headers=headers)
+            response.raise_for_status()
+            withdraw_result = response.json()
+            
+            logger.info(f"提现成功: {withdraw_result}")
+            return withdraw_result
+        except Exception as e:
+            logger.error(f"提现失败: {e}")
+            return {"error": str(e)}
     
     # WebSocket methods
     async def connect_websocket(self):
@@ -810,3 +1304,162 @@ class PolymarketGateway(BaseGateway):
         
         # 实际实现（待完成）
         logger.info(f"取消订阅市场: {market_id}")
+    
+    def create_order(self, market_id: str, outcome: str, price: float, size: float, side: str = 'buy') -> dict:
+        """创建订单
+        
+        Args:
+            market_id: 市场ID
+            outcome: 结果选项（Yes/No）
+            price: 价格
+            size: 数量
+            side: 买卖方向（buy/sell）
+            
+        Returns:
+            dict: 订单信息
+        """
+        if self.mock:
+            # 模拟订单
+            order_id = f"order_{int(time.time())}"
+            logger.info(f"[MOCK] 创建订单: {order_id}, 市场: {market_id}, 结果: {outcome}, 价格: {price}, 数量: {size}, 方向: {side}")
+            return {
+                "order_id": order_id,
+                "market_id": market_id,
+                "outcome": outcome,
+                "price": price,
+                "size": size,
+                "side": side,
+                "status": "submitted",
+                "timestamp": time.time()
+            }
+        
+        try:
+            # 获取市场详情，获取token ID
+            market = self.get_market(market_id)
+            clob_token_ids = market.get('clobTokenIds', [])
+            
+            if len(clob_token_ids) < 2:
+                logger.error(f"市场 {market_id} 没有有效的token ID")
+                return {"error": "市场没有有效的token ID"}
+            
+            # 根据结果选项选择token ID
+            if outcome.lower() == 'yes':
+                token_id = clob_token_ids[0]
+            elif outcome.lower() == 'no':
+                token_id = clob_token_ids[1]
+            else:
+                logger.error(f"无效的结果选项: {outcome}")
+                return {"error": "无效的结果选项"}
+            
+            # 获取市场详情，获取tick size和neg risk
+            market_detail = self.get_market(market_id)
+            tick_size = str(market_detail.get('minimum_tick_size', '0.01'))
+            neg_risk = market_detail.get('neg_risk', False)
+            
+            # 构建订单参数
+            order_args = {
+                "token_id": token_id,
+                "price": price,
+                "size": size,
+                "side": side,
+                "order_type": "GTC"
+            }
+            
+            # 使用CLOB API下单
+            url = f"{self.clob_api_url}/order"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}" if self.api_key else ""
+            }
+            
+            # 构建订单数据
+            order_data = {
+                "order": order_args,
+                "options": {
+                    "tick_size": tick_size,
+                    "neg_risk": neg_risk
+                }
+            }
+            
+            response = requests.post(url, json=order_data, headers=headers)
+            response.raise_for_status()
+            order_result = response.json()
+            
+            logger.info(f"订单创建成功: {order_result}")
+            return order_result
+        except Exception as e:
+            logger.error(f"创建订单失败: {e}")
+            return {"error": str(e)}
+    
+    def calculate_kelly_fraction(self, win_rate: float, avg_win: float, avg_loss: float) -> float:
+        """计算凯利公式
+        
+        Args:
+            win_rate: 胜率
+            avg_win: 平均盈利
+            avg_loss: 平均亏损
+            
+        Returns:
+            float: 凯利公式结果
+        """
+        if avg_win == 0:
+            return 0.0
+        
+        kelly_fraction = (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_win
+        
+        # 确保结果在合理范围内
+        kelly_fraction = max(0.0, min(kelly_fraction, 1.0))
+        
+        return kelly_fraction
+    
+    def check_trigger_and_execute(self, market_id: str, outcome: str, trigger_price: float, win_rate: float, avg_win: float, avg_loss: float, balance: float) -> dict:
+        """检查触发条件并执行交易
+        
+        Args:
+            market_id: 市场ID
+            outcome: 结果选项（Yes/No）
+            trigger_price: 触发购买值
+            win_rate: 胜率
+            avg_win: 平均盈利
+            avg_loss: 平均亏损
+            balance: 账户余额
+            
+        Returns:
+            dict: 交易结果
+        """
+        try:
+            # 获取当前市场价格
+            price_data = self.get_market_price(market_id)
+            current_price = float(price_data.get('last_price', '0'))
+            
+            # 检查是否达到触发条件
+            if current_price <= trigger_price:
+                # 计算凯利公式
+                kelly_fraction = self.calculate_kelly_fraction(win_rate, avg_win, avg_loss)
+                
+                # 计算下单数量
+                order_size = balance * kelly_fraction
+                
+                # 创建订单
+                order_result = self.create_order(market_id, outcome, trigger_price, order_size, 'buy')
+                
+                logger.info(f"触发条件满足，已执行交易: {order_result}")
+                return {
+                    "triggered": True,
+                    "current_price": current_price,
+                    "trigger_price": trigger_price,
+                    "kelly_fraction": kelly_fraction,
+                    "order_size": order_size,
+                    "order_result": order_result
+                }
+            else:
+                return {
+                    "triggered": False,
+                    "current_price": current_price,
+                    "trigger_price": trigger_price
+                }
+        except Exception as e:
+            logger.error(f"检查触发条件并执行交易失败: {e}")
+            return {
+                "error": str(e)
+            }

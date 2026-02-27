@@ -83,3 +83,16 @@ CREATE TABLE IF NOT EXISTS account_balances (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_account_asset (account_id, asset)
 );
+
+-- 市场价格表
+CREATE TABLE IF NOT EXISTS market_prices (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    market_id VARCHAR(100) NOT NULL,
+    last_price DECIMAL(20, 8) NOT NULL,
+    bid DECIMAL(20, 8) NOT NULL,
+    ask DECIMAL(20, 8) NOT NULL,
+    volume DECIMAL(20, 8) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_market (market_id)
+);

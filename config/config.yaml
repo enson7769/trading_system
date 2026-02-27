@@ -17,18 +17,19 @@ system:
 # 网关配置
 gateways:
   polymarket:
-    rpc_url: https://polygon-rpc.com/  # RPC节点URL
+    rpc_url: https://rpc.ankr.com/polygon/f25ebd37e9c51ca87cebcfed3f4a3edd2c06b73e7f43ad838cbe7d5e7f837269  # RPC节点URL
     mock: false  # 是否启用模拟模式
     exchange_address: "0x435AB6645531D3f5391E8B8DA9c0F7b64e6C7e11"  # 交易所合约地址
     usdc_address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # USDC代币合约地址
     # 账户配置
-    address: "YOUR_POLYMARKET_ADDRESS"  # Polymarket账户地址
-    api_key: "YOUR_POLYMARKET_API_KEY"  # Polymarket API Key
+    address: "0xd5d4b186871b3f33c4dc36a0714975b30fed60e6"  # Polymarket账户地址
+    api_key: "019bf930-1295-7dcf-8260-78915aac9bc1"  # Polymarket API Key
     # API端点配置
     gamma_api_url: https://gamma-api.polymarket.com  # Gamma API端点
     clob_api_url: https://clob.polymarket.com  # CLOB API端点
     data_api_url: https://data-api.polymarket.com  # Data API端点
     websocket_url: wss://ws-subscriptions-clob.polymarket.com  # WebSocket API端点
+    withdraw_api_url: https://clob.polymarket.com  # 提现API端点
     # API配置
     api_timeout: 30  # API请求超时时间（秒）
     api_retries: 3  # API请求重试次数

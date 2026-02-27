@@ -34,7 +34,7 @@ class OrderStatusPage:
             # 使用改进的选项显示数据框
             st.dataframe(
                 df_orders,
-                use_container_width=True,
+                width="100%",
                 hide_index=True,
                 column_config={
                     'Order ID': st.column_config.TextColumn('订单ID', width='small'),
@@ -57,7 +57,7 @@ class OrderStatusPage:
             ])
             st.dataframe(
                 empty_df,
-                use_container_width=True,
+                width="100%",
                 hide_index=True,
                 column_config={
                     'Order ID': st.column_config.TextColumn('订单ID', width='small'),

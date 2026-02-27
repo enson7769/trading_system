@@ -19,7 +19,7 @@ class LargeOrdersPage:
             # 使用改进的选项显示数据框
             st.dataframe(
                 df_large_orders,
-                use_container_width=True,
+                width="100%",
                 hide_index=True,
                 column_config={
                     'Timestamp': st.column_config.DatetimeColumn('时间戳'),
@@ -35,7 +35,7 @@ class LargeOrdersPage:
             empty_df = pd.DataFrame(columns=['Timestamp', 'Symbol', 'Side', 'Quantity', 'Price', 'Account'])
             st.dataframe(
                 empty_df,
-                use_container_width=True,
+                width="100%",
                 hide_index=True,
                 column_config={
                     'Timestamp': st.column_config.DatetimeColumn('时间戳'),

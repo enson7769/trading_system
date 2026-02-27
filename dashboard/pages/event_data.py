@@ -19,7 +19,7 @@ class EventDataPage:
             # 使用改进的选项显示数据框
             st.dataframe(
                 df_events,
-                use_container_width=True,
+                width="100%",
                 hide_index=True,
                 column_config={
                     'Event Name': st.column_config.TextColumn('事件名称', width='small'),
@@ -32,7 +32,7 @@ class EventDataPage:
             empty_df = pd.DataFrame(columns=['Event Name', 'Timestamp', 'Data'])
             st.dataframe(
                 empty_df,
-                use_container_width=True,
+                width="100%",
                 hide_index=True,
                 column_config={
                     'Event Name': st.column_config.TextColumn('事件名称', width='small'),

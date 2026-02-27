@@ -276,33 +276,31 @@ class MonitoringDashboard:
         
         return compute_portfolio()
     
+    def _get_polymarket_balance(self) -> Dict[str, Any]:
+        """Get Polymarket account balance"""
+        if not self.polymarket_gateway:
+            return {}
+        
+        def compute_balance():
+            return self.polymarket_gateway.get_balance()
+        
+        return compute_balance()
+    
     def run_dashboard(self):
         """运行仪表盘，使用页签聚合子页面内容"""
+        # 设置页面配置，隐藏侧边栏
+        st.set_page_config(
+            page_title="交易系统监控仪表盘",
+            page_icon="📊",
+            layout="wide",
+            initial_sidebar_state="collapsed"
+        )
+        
         st.title('交易系统监控仪表盘')
         
         # 初始化实时数据的会话状态
         if 'last_refresh' not in st.session_state:
             st.session_state.last_refresh = datetime.now()
-        
-        # 侧边栏控制
-        with st.sidebar:
-            st.header('仪表盘控制')
-            page_size = st.selectbox('每页显示数量', [50, 100, 200], index=1, key='sidebar_page_size')
-            
-            # 数据服务状态
-            st.header('数据服务状态')
-            if data_service.is_initialized():
-                st.success('数据服务已连接')
-                system_status = data_service.get_system_status()
-                components = system_status.get('components', {})
-                for component, status in components.items():
-                    if status:
-                        st.success(f'{component.replace("_", " ").title()}')
-                    else:
-                        st.warning(f'{component.replace("_", " ").title()}')
-            else:
-                st.warning('数据服务未连接')
-                st.info('请先运行主交易系统以初始化数据服务。')
         
         # 创建页签
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -316,7 +314,7 @@ class MonitoringDashboard:
         
         # 订单状态页签
         with tab1:
-            self.order_status_page.render(page_size)
+            self.order_status_page.render(100)  # 使用默认值100
         
         # 市场流动性页签
         with tab2:
@@ -324,11 +322,11 @@ class MonitoringDashboard:
         
         # 事件数据页签
         with tab3:
-            self.event_data_page.render(page_size)
+            self.event_data_page.render(100)  # 使用默认值100
         
         # 大额订单页签
         with tab4:
-            self.large_orders_page.render(page_size)
+            self.large_orders_page.render(100)  # 使用默认值100
         
         # 系统状态页签
         with tab5:
